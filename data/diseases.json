@@ -1,0 +1,34 @@
+[
+  {
+    "id": "D-01",
+    "name": "Mysterious Fever",
+    "transmission_rate": 0.3,
+    "lethality": 0.1,
+    "incubation_period": 3,
+    "symptoms_impact": {
+      "stamina": -10,
+      "hp": -5
+    }
+  },
+  {
+    "id": "D-02",
+    "name": "Cave Cough",
+    "transmission_rate": 0.6,
+    "lethality": 0.05,
+    "incubation_period": 1,
+    "symptoms_impact": {
+      "stamina": -20
+    }
+  },
+  {
+    "id": "D-03",
+    "name": "Berry Rot",
+    "transmission_rate": 0.1,
+    "lethality": 0.4,
+    "incubation_period": 5,
+    "symptoms_impact": {
+      "hp": -20,
+      "stamina": -30
+    }
+  }
+]
