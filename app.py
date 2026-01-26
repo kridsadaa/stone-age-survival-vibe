@@ -35,6 +35,10 @@ with st.sidebar:
 
     st.markdown("### Debug Stats")
     st.write(f"Total Resources: {st.session_state.world.resources}")
+    
+    if st.button("🔄 Reset Simulation"):
+        st.session_state.world = World()
+        st.rerun()
 
 # Main Dashboard
 world = st.session_state.world
@@ -58,12 +62,14 @@ with tab1:
         for p in living_pop:
             data.append({
                 "ID": p.id,
+                "Family ID": p.family_id,
                 "Age": p.age,
                 "Gender": p.gender,
                 "HP": p.current_hp,
                 "Stamina": p.stamina,
                 "Traits": ", ".join([t['name'] for t in p.traits]),
-                "Infected": ", ".join(p.infected_diseases)
+                "Infected": ", ".join(p.infected_diseases),
+                "Status": "Pregnant" if p.is_pregnant else "Normal"
             })
         df = pd.DataFrame(data)
         st.dataframe(df, use_container_width=True)

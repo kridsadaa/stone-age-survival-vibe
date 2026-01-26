@@ -65,6 +65,21 @@ class World:
             
             p.update(food_available=fed, disease_data=self.diseases)
             
+            # Check for Births
+            if p.gender == 'Female' and p.is_pregnant:
+                if p.advance_pregnancy():
+                    # Baby Born!
+                    father = next((f for f in self.population if f.id == p.partner_id), None)
+                    # Even if father dead, genetics pass
+                    parents = [p]
+                    if father: parents.append(father)
+                    
+                    baby = Human(age=0, parents=parents, traits_pool=self.traits_df)
+                    self.population.append(baby)
+                    
+                    father_name = father.id if father else "Unknown"
+                    self.log(f"BIRTH: {p.id} gave birth to {baby.id} (Father: {father_name}, Family: {baby.family_id})")
+
             if not p.is_alive and p.cause_of_death != "Already Dead": 
                 # He might have died in update()
                 deaths_today += 1
@@ -73,12 +88,38 @@ class World:
         # 3. Disease Outbreak & Spread
         self._handle_disease(living_pop)
         
-        # 4. Reproduction (Optional for now, but good for sustained sim)
-        # Simple random birth if pop < cap
-        if len(living_pop) < 200 and random.random() < 0.2:
-            new_baby = Human(age=0, traits_pool=self.traits_df)
-            self.population.append(new_baby)
-            self.log(f"A new baby was born! ID: {new_baby.id}")
+        # 4. Reproduction (Mating)
+        self._handle_reproduction(living_pop)
+
+    def _handle_reproduction(self, living_pop):
+        if len(living_pop) >= 200: return # Cap population
+        
+        # Find potential couples
+        males = [p for p in living_pop if p.gender == 'Male' and p.age >= 16] # Assuming Age is years again or huge tick number? Let's use 16 for now assuming initial gen is >16
+        females = [p for p in living_pop if p.gender == 'Female' and p.age >= 16 and not p.is_pregnant]
+        
+        random.shuffle(males)
+        random.shuffle(females)
+        
+        # Simple Pair Matching
+        for m in males:
+            if not females: break
+            
+            # find a partner not in same family (simple incest check)
+            partner = None
+            for f in females:
+                if f.family_id != m.family_id:
+                     partner = f
+                     break
+            
+            if partner:
+                females.remove(partner)
+                # Chance to mate
+                # Base 5% chance per day?
+                if random.random() < 0.05:
+                    if partner.get_pregnant(m.id):
+                        # self.log(f"{partner.id} became pregnant with {m.id}") # Optional detailed log
+                        pass
 
     def _handle_disease(self, living_pop):
         # Spontaneous Outbreak (Patient Zero)
