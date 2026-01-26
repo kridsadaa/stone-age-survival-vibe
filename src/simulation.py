@@ -3,20 +3,35 @@ import random
 from src.models import Human
 from src.loaders import load_diseases, load_traits
 from src.ai import QAgent
+from src.tech import TechTree
+from src.map import WorldMap
 
 class World:
     def __init__(self, 
                  diseases_path='data/diseases.json', 
                  traits_path='data/traits.csv', 
-                 initial_pop=50):
+                 initial_pop=50,
+                 existing_ai=None):
         
         self.day = 0
         self.era = "Stone Age" # Evolution State
-        self.ai = QAgent()
+        
+        # AI Persistence
+        if existing_ai:
+            self.ai = existing_ai
+        else:
+            self.ai = QAgent()
+            
         self.ai_action = 1 # Default Balanced
         self.population: List[Human] = []
         self.chronicle: List[str] = []
         self.resources = 1000 # Example shared food store
+        
+        # Tech & Resources
+        self.inventory = {"Wood": 0, "Stone": 0}
+        self.idea_points = 0.0
+        self.tech_tree = TechTree()
+        self.map = WorldMap()
         
         # Load Data
         self.diseases = load_diseases(diseases_path)
@@ -101,21 +116,51 @@ class World:
         current_state = self.ai.get_state_key(self.current_season, self.resources, total_pop, infected_count)
         
         # Calculate Reward (Pop * 1 + Resources * 0.01) - Penalty in death logic
-        # We need to pass the "Death Penalty" from the previous day? 
-        # Let's define reward = Alive Count. Simple.
         reward = len(living_pop) 
         if self.resources < len(living_pop) * 10: reward -= 50 # Starvation penalty
         
+        # Check Scout Deaths from LAST turn (Since we learn at start of tick for previous day)
+        # We need to store 'last_turn_dead_scouts' in World class. 
+        # For this prototype, let's just use 'scout_deaths' if it persists, but tick() vars are local.
+        # Let's attach it to self
+        if hasattr(self, 'last_turn_scout_deaths'):
+             reward -= (self.last_turn_scout_deaths * 50) # Heavy penalty
+             
         self.ai.learn(reward, current_state)
         
         # B. Choose Action
         action = self.ai.choose_action(current_state)
         self.ai_action = action
-        # Actions: 0=Gather (1/50), 1=Balanced (1/20), 2=Heal (1/10)
+        # Actions: 0-2 (Jobs), 3-5 (Scouting)
+        
+        # Mapping Actions to Policies
+        # Actions 0-2 control Job Ratio. 3-5 might implicitly mean "Balance Job" + "Scout Mode"
+        # Since we use a single integer action, let's map them:
+        # 0: Eco (Gather Focus) + No Scout
+        # 1: Balance + No Scout
+        # 2: Heal Focus + No Scout
+        # 3: Balance + Patrol (Small Risk)
+        # 4: Balance + Expedition (Large Safe)
+        # 5: Eco + Patrol (Risk) -> Complexity.
+        # Let's Simplify: 
+        # 0,1,2 = Standard Jobs + NO SCOUT
+        # 3 = Balance Job + Patrol
+        # 4 = Balance Job + Expedition
+        # 5 = Stop Scouting (Same as 1? No, let's make 5 explicit 'Safe Mode')
+        
+        # Actually, let's decouple? No, Q-Table assumes discrete actions.
+        # Let's say:
+        # 0: GatherFocus
+        # 1: Balance
+        # 2: HealFocus
+        # 3: Scout Patrol (Balance Job)
+        # 4: Scout Expedition (Balance Job)
+        # 5: Extreme Safety (Heal Focus + No Scout)
         
         healer_ratio = 20 # Default
-        if action == 0: healer_ratio = 50
-        elif action == 2: healer_ratio = 10
+        if action == 0: healer_ratio = 50 # Few healers
+        elif action == 2 or action == 5: healer_ratio = 10 # Many healers
+        elif action >= 3: healer_ratio = 20 # Balance
         
         # Healer Ratio: 1 per X pop
         target_healers = max(1, total_pop // healer_ratio)
@@ -127,7 +172,7 @@ class World:
             if candidates:
                 new_healer = random.choice(candidates)
                 new_healer.set_job("Healer")
-                self.log(f"AI: Promoted {new_healer.id} to Healer (Policy: {['Gathering', 'Balanced', 'Healing'][action]})")
+                self.log(f"AI: Promoted {new_healer.id} to Healer")
                 current_healers += 1
         elif current_healers > target_healers:
              # Demote to Gatherer
@@ -135,7 +180,7 @@ class World:
              if healers:
                  fired = random.choice(healers)
                  fired.set_job("Gatherer")
-                 self.log(f"AI: {fired.id} assigned to Gathering (Policy: {['Gathering', 'Balanced', 'Healing'][action]})")
+                 self.log(f"AI: {fired.id} assigned to Gathering")
         
         # 1. Resource Gathering
         gathered = 0
@@ -182,6 +227,114 @@ class World:
                  self.log(f"EVENT: The tribe successfully hunted a Mammoth! (+{hunt_yield} Food)")
             
         self.resources += gathered
+        
+        # --- Innovation & Tech Tick ---
+        # 1. Generate Ideas (Based on Openness)
+        daily_ideas = 0
+        for p in living_pop:
+            daily_ideas += (p.personality["Openness"] * 0.2) # Base 0.2 per person
+        
+        # Eureka Chance
+        if random.random() < 0.001: # 0.1% chance
+            bonus_ideas = 500
+            daily_ideas += bonus_ideas
+            self.log("EVENT: EUREKA! A sudden flash of inspiration hits the tribe!")
+            
+        self.idea_points += daily_ideas
+        
+        # 2. Check Unlocks
+        new_techs = self.tech_tree.check_unlocks(self.idea_points)
+        for t_name in new_techs:
+            self.log(f"DISCOVERY: The tribe has mastered **{t_name}**!")
+            
+        # 3. Scouting & Exploration (AI Controlled)
+        # Determine Scout Party Size based on AI Action
+        # Actions: 0-2 (Eco), 3 (Patrol), 4 (Expedition), 5 (No Scout)
+        scout_party_size = 0
+        if self.ai_action == 3: 
+            scout_party_size = random.randint(2, 4) # Small Patrol
+        elif self.ai_action == 4:
+            scout_party_size = random.randint(10, 15) # Major Expedition
+        
+        # Limit by population (can't send more than 20% of pop)
+        scout_party_size = min(scout_party_size, int(len(living_pop) * 0.2))
+        
+        # Execute Exploration
+        scout_deaths = 0
+        if scout_party_size > 0:
+            # Pick target
+            dist = 2 if self.ai_action == 4 else 1
+            cx = self.map.village_x + random.randint(-dist, dist)
+            cy = self.map.village_y + random.randint(-dist, dist)
+            
+            # Explore
+            new_tiles = self.map.explore(cx, cy, radius=1)
+            
+            # 1. Check tile danger for the target area (simplified: center tile)
+            # Ensure bounds
+            tx = max(0, min(self.map.width-1, cx))
+            ty = max(0, min(self.map.height-1, cy))
+            target_tile = self.map.grid[ty][tx]
+            
+            if target_tile.danger_level > 0:
+                # Combat Logic
+                # Risk = Danger / (Party Size * Tech)
+                tech_multiplier = 1.0
+                if self.tech_tree.techs["spears"].unlocked: tech_multiplier = 2.0
+                
+                risk_factor = target_tile.danger_level / (scout_party_size * 0.5 * tech_multiplier)
+                risk_factor = min(0.8, risk_factor) # Cap risk
+                
+                # Roll for incident
+                if random.random() < risk_factor:
+                    # Casualty!
+                    num_dead = 1
+                    if target_tile.danger_level > 0.5 and scout_party_size < 5:
+                         num_dead = min(scout_party_size, random.randint(1, 3)) # Ambush kills more if small party
+                    
+                    scout_deaths = num_dead
+                    self.log(f"⚠️ DANGER: Scouts ambushed at {target_tile.biome}! {num_dead} died. (Party: {scout_party_size})")
+                    
+                    # Kill random people (Assumed scouts are random adults)
+                    victims = [p for p in living_pop if p.age > 15 and p.is_alive][:num_dead]
+                    for v in victims:
+                        v.is_alive = False
+                        v.cause_of_death = f"Killed by predator in {target_tile.biome}"
+            
+            if new_tiles > 0:
+                 self.log(f"EXPLORATION: Party of {scout_party_size} revealed {new_tiles} areas.")
+
+        # 4. Material Gathering (Dependent on Map)
+        if self.tech_tree.techs["primitive_tools"].unlocked:
+            # Check Map Resources
+            map_stats, _ = self.map.get_stats()
+            
+            # Wood requires Forests
+            forest_mod = min(5.0, map_stats["Forest"] * 0.5) # More forests = easier to find wood. Cap at 5x
+            # Stone requires Mountains
+            mountain_mod = min(5.0, map_stats["Mountain"] * 0.5)
+            
+            # Passive gathering of Wood/Stone by idle population or dedicated portion
+            num_gatherers = len([p for p in living_pop if p.job == "Gatherer"])
+            
+            # Efficiency modifiers
+            tool_bonus = 1.0
+            if self.tech_tree.techs["composite_tools"].unlocked: tool_bonus = 1.5
+            
+            # If no forest discovered, can't gather wood effectively (driftwood only)
+            wood_yield_base = 0.01 if map_stats["Forest"] == 0 else 0.1
+            stone_yield_base = 0.01 if map_stats["Mountain"] == 0 else 0.05
+            
+            wood_gain = num_gatherers * wood_yield_base * tool_bonus * forest_mod
+            stone_gain = num_gatherers * stone_yield_base * tool_bonus * mountain_mod
+            
+            self.inventory["Wood"] += wood_gain
+            self.inventory["Stone"] += stone_gain
+
+        # 5. Tech Effects (Fire)
+        if self.tech_tree.techs["fire"].unlocked and season == "Winter":
+            # Fire reduces metabolic cost in winter
+            metabolic_modifier = max(0, metabolic_modifier - 1) # Reduce form 2->1 or 1->0
         
         # 2. Consumption & Bio Updates
         # Sort by age (weakest/oldest eat last? or first? User said: "If food is scarce, older or weaker agents die first.")

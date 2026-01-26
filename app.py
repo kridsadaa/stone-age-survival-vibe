@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from src.simulation import World
 import time
+import os
 
 st.set_page_config(page_title="Stone Age Survival", layout="wide")
 
@@ -47,9 +48,28 @@ with st.sidebar:
     st.markdown("### Debug Stats")
     st.write(f"Total Resources: {st.session_state.world.resources}")
     
-    if st.button("🔄 Reset Simulation"):
-        st.session_state.world = World()
-        st.rerun()
+    # Reset Controls
+    col_r1, col_r2 = st.columns(2)
+    
+    with col_r1:
+        if st.button("🔄 New Game (Keep AI)", help="Resets population/map but keeps AI learning"):
+            # Preserve Brain
+            passed_ai = None
+            if hasattr(st.session_state.world, 'ai'):
+                passed_ai = st.session_state.world.ai
+            
+            st.session_state.world = World(existing_ai=passed_ai)
+            st.rerun()
+            
+    with col_r2:
+        if st.button("💥 Hard Reset (Wipe AI)", help="Resets EVERYTHING (Deletes AI Memory)"):
+            if os.path.exists("tribal_brain.pkl"):
+                try:
+                    os.remove("tribal_brain.pkl")
+                except: pass
+            
+            st.session_state.world = World() # Fresh AI
+            st.rerun()
 
     st.markdown("---")
     st.markdown("### 🧠 Tribal Intelligence (AI)")
@@ -57,9 +77,20 @@ with st.sidebar:
     # Check if AI exists (backward compatibility)
     if hasattr(st.session_state.world, 'ai'):
         ai_action = st.session_state.world.ai_action
-        policies = ["Gathering Priority", "Balanced", "Healing Priority"]
+        policies = [
+            "Gathering Priority", 
+            "Balanced", 
+            "Healing Priority",
+            "Balanced + Scout Patrol (Risk)",
+            "Balanced + Scout Expedition (Safe)",
+            "Extreme Safety (No Scout)"
+        ]
         
-        st.info(f"**Current Policy**: {policies[ai_action]}")
+        # Safety check for index
+        if ai_action < len(policies):
+             st.info(f"**Current Policy**: {policies[ai_action]}")
+        else:
+             st.info(f"**Current Policy**: Unknown Action {ai_action}")
         
         # Brain Details
         with st.expander("AI Brain (Q-Values)"):
@@ -102,13 +133,17 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("Day & Season", f"Day {world.day}", delta=season_display)
 col2.metric("Population", len(living_pop), delta=f"{len(living_pop) - 50} from start" if world.day > 0 else 0)
 col3.metric("Food Storage", int(world.resources), delta="Stockpile")
-col4.metric("Infected", sum(1 for p in living_pop if p.infected_diseases))
+# New Inventory Metrics if unlocked & safeguards
+if hasattr(world, 'tech_tree') and world.tech_tree.techs["primitive_tools"].unlocked:
+    col4.metric("Resources", f"🪵 {int(world.inventory['Wood'])} | 🪨 {int(world.inventory['Stone'])}")
+else:
+    col4.metric("Infected", sum(1 for p in living_pop if p.infected_diseases))
 
 # Job Stats
 st.caption(f"**Roles**: 🏹 Gatherers: {gatherers} | 💊 Healers: {healers} (Recovery Bonus: +{healers * 5}%)")
 
 # Detailed Views
-tab1, tab2, tab3 = st.tabs(["Village Status", "The Chronicle", "Data Export"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Village Status", "Technology", "World Map", "The Chronicle", "Data Export"])
 
 with tab1:
     st.subheader("Population Demographics")
@@ -159,23 +194,37 @@ with tab1:
             selected_person_id = df.iloc[selected_row_idx]["ID"]
         
         # Charts
+        # Charts (Optimized: Only full render when paused to save FPS)
         col_c1, col_c2 = st.columns(2)
+        
+        # Check if running (We don't have explicit running state variable in session_state usually, but we check if we just ticked?)
+        # Actually, Streamlit reruns the whole script. 
+        # For optimization: Let's simpler graphs or skip heavy calculation if pop > 500
+        
         with col_c1:
             st.caption("Age Distribution")
-            st.bar_chart(df['Age'].astype(float).astype(int).value_counts())
+            # Optimize: Get ages list directly (Avoid DF overhead if possible)
+            all_ages = [int(p.age) for p in living_pop]
+            age_counts = pd.Series(all_ages).value_counts().sort_index()
+            st.bar_chart(age_counts)
             
         with col_c2:
             st.caption("Average Tribe Personality (OCEAN)")
-            # Calculate avg personality
-            avg_traits = {"Openness": 0, "Conscientiousness": 0, "Extraversion": 0, "Agreeableness": 0, "Neuroticism": 0}
-            if living_pop:
-                for p in living_pop:
-                    for k in avg_traits:
-                        avg_traits[k] += p.personality.get(k, 0.5)
-                for k in avg_traits:
-                    avg_traits[k] /= len(living_pop)
-            
-            st.bar_chart(pd.Series(avg_traits))
+            # Optimize: Calculate averages only once per day or skip if pop huge
+            if len(living_pop) > 500 and world.day % 5 != 0:
+                 st.info("Charts paused for performance (Updates every 5 days)")
+            else:
+                 avg_traits = {"Openness": 0, "Conscientiousness": 0, "Extraversion": 0, "Agreeableness": 0, "Neuroticism": 0}
+                 if living_pop:
+                     # Sample if too large
+                     sample_pop = living_pop if len(living_pop) < 200 else random.sample(living_pop, 200)
+                     for p in sample_pop:
+                         for k in avg_traits:
+                             avg_traits[k] += p.personality.get(k, 0.5)
+                     for k in avg_traits:
+                         avg_traits[k] /= len(sample_pop)
+                 
+                 st.bar_chart(pd.Series(avg_traits))
 
     st.divider()
     st.subheader("🔍 Agent Inspector")
@@ -289,6 +338,82 @@ with tab1:
         st.write("No villagers alive.")
 
 with tab2:
+    if hasattr(world, 'tech_tree'):
+        st.subheader("💡 Innovation & Technology")
+        
+        # Idea Progress
+        st.metric("Total Idea Points", f"{int(world.idea_points):,}", delta="Accumulating...")
+        
+        # Tech Tree Visualization
+        st.markdown("### Technology Tree")
+        
+        col_t1, col_t2 = st.columns(2)
+        
+        # Split techs into columns or list
+        techs = list(world.tech_tree.techs.values())
+        
+        for tech in techs:
+            # Determine Status
+            status_icon = "🔒"
+            status_color = "grey"
+            if tech.unlocked:
+                status_icon = "✅"
+                status_color = "green"
+            elif world.idea_points >= tech.cost * 0.5:
+                status_icon = "🔓" # Close to unlocking
+                
+            with st.expander(f"{status_icon} {tech.name} (Cost: {tech.cost})", expanded=tech.unlocked):
+                st.write(tech.description)
+                if tech.unlocked:
+                    st.success("MASTERY ACHIEVED")
+                else:
+                    progress = min(1.0, world.idea_points / tech.cost)
+                    st.progress(progress)
+                    st.caption(f"Progress: {int(world.idea_points)} / {tech.cost} Ideas")
+    else:
+        st.warning("Technology System not initialized. Please Reset Simulation.")
+
+with tab3:
+    if hasattr(world, 'map'):
+        st.subheader("🗺️ World Map (Exploration)")
+        
+        # Stats
+        map_stats, explored_count = world.map.get_stats()
+        total_tiles = world.map.width * world.map.height
+        coverage = explored_count / total_tiles
+        
+        m_col1, m_col2 = st.columns(2)
+        m_col1.metric("Explored", f"{coverage:.1%}", delta=f"{explored_count} tiles")
+        m_col2.caption(f"Biomes Discovered: 🌲 {map_stats['Forest']} | ⛰️ {map_stats['Mountain']} | 💧 {map_stats['River']}")
+        
+        # Render Map using Matplotlib
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as mcolors
+        import numpy as np
+
+        # Get color matrix
+        color_matrix = world.map.get_view_matrix()
+        
+        # Create a custom colormap handling hex strings directly is tricky in imshow with lists
+        # Easiest way: Convert hex to RGB tuples
+        rgb_matrix = []
+        for row in color_matrix:
+            rgb_row = []
+            for hex_code in row:
+                rgb_row.append(mcolors.to_rgb(hex_code))
+            rgb_matrix.append(rgb_row)
+            
+        fig, ax = plt.subplots(figsize=(8,8))
+        ax.imshow(rgb_matrix)
+        ax.set_axis_off()
+        ax.set_title("Known World")
+        st.pyplot(fig)
+        
+        st.info("**Scouting**: Agents with high 'Openness' automatically explore nearby lands.")
+    else:
+        st.warning("Map System not initialized. Please Reset Simulation.")
+
+with tab4:
     st.subheader("Event Log")
     for log in world.chronicle:
         if "died" in log:

@@ -4,11 +4,19 @@ import os
 
 class QAgent:
     def __init__(self, alpha=0.1, gamma=0.9, epsilon=0.1):
-        self.q_table = {} # (state) -> [q_value_action_0, q_value_action_1, ...]
+        self.q_table = {} # (state) -> q_values
         self.alpha = alpha # Learning Rate
         self.gamma = gamma # Discount Factor
         self.epsilon = epsilon # Exploration Rate
-        self.actions = [0, 1, 2] # 0: Gather, 1: Balance, 2: Heal
+        
+        # Actions: 
+        # 0: GatherFocus
+        # 1: Balance
+        # 2: HealFocus
+        # 3: ScoutPatrol (Small Group - High Risk)
+        # 4: ScoutExpedition (Large Group - Safe)
+        # 5: NoScout (Safety)
+        self.actions = [0, 1, 2, 3, 4, 5]
         
         self.last_state = None
         self.last_action = None
@@ -26,7 +34,10 @@ class QAgent:
         infection_rate = infected_count / max(1, population)
         health_state = "PLAGUE" if infection_rate > 0.1 else "HEALTHY"
         
-        return (season, res_state, health_state)
+        # Pop State
+        pop_state = "SMALL" if population < 50 else "LARGE"
+        
+        return (season, res_state, health_state, pop_state)
 
     def choose_action(self, state):
         self.last_state = state
