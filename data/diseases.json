@@ -2,33 +2,81 @@
   {
     "id": "D-01",
     "name": "Mysterious Fever",
-    "transmission_rate": 0.3,
-    "lethality": 0.1,
+    "transmission_rate": 0.05,
+    "lethality": 0.0,
     "incubation_period": 3,
+    "recovery_threshold": 100,
+    "confers_immunity": true,
+    "age_factors": {
+      "child": {
+        "susceptibility": 1.2,
+        "severity": 0.8
+      },
+      "adult": {
+        "susceptibility": 1.0,
+        "severity": 1.0
+      },
+      "elder": {
+        "susceptibility": 1.5,
+        "severity": 1.5
+      }
+    },
     "symptoms_impact": {
-      "stamina": -10,
-      "hp": -5
+      "stamina": -2,
+      "hp": -1
     }
   },
   {
     "id": "D-02",
     "name": "Cave Cough",
-    "transmission_rate": 0.6,
-    "lethality": 0.05,
+    "transmission_rate": 0.1,
+    "lethality": 0.0,
     "incubation_period": 1,
+    "recovery_threshold": 60,
+    "confers_immunity": false,
+    "age_factors": {
+      "child": {
+        "susceptibility": 1.0,
+        "severity": 1.0
+      },
+      "adult": {
+        "susceptibility": 0.8,
+        "severity": 0.8
+      },
+      "elder": {
+        "susceptibility": 2.0,
+        "severity": 2.5
+      }
+    },
     "symptoms_impact": {
-      "stamina": -20
+      "stamina": -5
     }
   },
   {
     "id": "D-03",
     "name": "Berry Rot",
-    "transmission_rate": 0.1,
-    "lethality": 0.4,
+    "transmission_rate": 0.02,
+    "lethality": 0.0,
     "incubation_period": 5,
+    "recovery_threshold": 80,
+    "confers_immunity": true,
+    "age_factors": {
+      "child": {
+        "susceptibility": 2.0,
+        "severity": 2.0
+      },
+      "adult": {
+        "susceptibility": 0.5,
+        "severity": 0.5
+      },
+      "elder": {
+        "susceptibility": 0.5,
+        "severity": 1.0
+      }
+    },
     "symptoms_impact": {
-      "hp": -20,
-      "stamina": -30
+      "hp": -1,
+      "stamina": -2
     }
   }
 ]

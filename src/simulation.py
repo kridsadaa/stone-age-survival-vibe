@@ -2,6 +2,7 @@ from typing import List, Dict
 import random
 from src.models import Human
 from src.loaders import load_diseases, load_traits
+from src.ai import QAgent
 
 class World:
     def __init__(self, 
@@ -10,6 +11,9 @@ class World:
                  initial_pop=50):
         
         self.day = 0
+        self.era = "Stone Age" # Evolution State
+        self.ai = QAgent()
+        self.ai_action = 1 # Default Balanced
         self.population: List[Human] = []
         self.chronicle: List[str] = []
         self.resources = 1000 # Example shared food store
@@ -19,11 +23,58 @@ class World:
         self.traits_df = load_traits(traits_path)
         
         # Init Population
-        for _ in range(initial_pop):
-            h = Human(traits_pool=self.traits_df)
-            self.population.append(h)
+        self._generate_initial_population(initial_pop)
+        
+        # Initial Job Assignment (Ensure at least 1 Healer)
+        if self.population:
+            # Pick a random adult to be the shaman
+            adults = [p for p in self.population if p.age >= 16]
+            if adults:
+                shaman = random.choice(adults)
+                shaman.set_job("Healer")
             
-        self.log(f"world created with {initial_pop} agents.")
+        self.log(f"world created with {len(self.population)} agents (Target: {initial_pop}).")
+
+    @property
+    def current_season(self):
+        day_of_year = self.day % 365
+        if day_of_year < 90: return "Spring"
+        elif day_of_year < 180: return "Summer"
+        elif day_of_year < 270: return "Autumn"
+        else: return "Winter"
+
+    def _generate_initial_population(self, target_pop: int):
+        while len(self.population) < target_pop:
+            # 70% chance to spawn a family, 30% loner
+            if random.random() < 0.7:
+                # Family Unit
+                family_id = f"FAM-{random.randint(1000, 9999)}"
+                
+                # Father
+                father = Human(gender='Male', age=random.randint(18, 50), traits_pool=self.traits_df, family_id=family_id)
+                self.population.append(father)
+                
+                # Mother
+                mother = Human(gender='Female', age=random.randint(18, 50), traits_pool=self.traits_df, family_id=family_id)
+                # Small chance they are parents of the kids
+                mother.partner_id = father.id # Initial pair
+                self.population.append(mother)
+                
+                # Children (0-3 kids)
+                num_kids = random.randint(0, 3)
+                for _ in range(num_kids):
+                    # Age must be reasonable (Mother age - 16 >= Kid age)
+                    max_kid_age = min(15, mother.age - 16)
+                    if max_kid_age < 0: max_kid_age = 0
+                    
+                    kid_age = random.randint(0, max_kid_age)
+                    kid = Human(age=kid_age, parents=[father, mother], traits_pool=self.traits_df, family_id=family_id)
+                    self.population.append(kid)
+            else:
+                # Loner
+                age = random.randint(16, 60)
+                loner = Human(age=age, traits_pool=self.traits_df)
+                self.population.append(loner)
 
     def log(self, message: str):
         entry = f"Day {self.day}: {message}"
@@ -31,11 +82,78 @@ class World:
 
     def tick(self):
         self.day += 1
-        
-        # 1. Resource Gathering (Simplified)
-        # Total foraging power
-        gathered = 0
+
+        # 0. AI Decision & Job Assignment
         living_pop = [p for p in self.population if p.is_alive]
+        total_pop = len(living_pop)
+        infected_count = sum(1 for p in living_pop if p.infected_diseases)
+        
+        # A. Learn from previous day
+        # Reward Logic:
+        # Survival is key. Growth is good. Death is bad.
+        # Simple Reward: +1 per pop (alive), -10 per death (calculated later), +0.1 per food surplus
+        # For simplicity in this step, we'll calculate "Day Reward" at the END of the tick loop or estimate here.
+        # Let's estimate strictly based on current state vs previous expectation?
+        # Actually, let's learn at the START of the tick based on what happened since yesterday.
+        # But we don't store "yesterday's pop" easily without adding fields.
+        # Let's keep it simple: State -> Action. Reward comes from *Growth* and *Food Stability*.
+        
+        current_state = self.ai.get_state_key(self.current_season, self.resources, total_pop, infected_count)
+        
+        # Calculate Reward (Pop * 1 + Resources * 0.01) - Penalty in death logic
+        # We need to pass the "Death Penalty" from the previous day? 
+        # Let's define reward = Alive Count. Simple.
+        reward = len(living_pop) 
+        if self.resources < len(living_pop) * 10: reward -= 50 # Starvation penalty
+        
+        self.ai.learn(reward, current_state)
+        
+        # B. Choose Action
+        action = self.ai.choose_action(current_state)
+        self.ai_action = action
+        # Actions: 0=Gather (1/50), 1=Balanced (1/20), 2=Heal (1/10)
+        
+        healer_ratio = 20 # Default
+        if action == 0: healer_ratio = 50
+        elif action == 2: healer_ratio = 10
+        
+        # Healer Ratio: 1 per X pop
+        target_healers = max(1, total_pop // healer_ratio)
+        current_healers = sum(1 for p in living_pop if p.job == "Healer")
+        
+        if current_healers < target_healers:
+            # Promote random Gatherer
+            candidates = [p for p in living_pop if p.job == "Gatherer" and p.age >= 16]
+            if candidates:
+                new_healer = random.choice(candidates)
+                new_healer.set_job("Healer")
+                self.log(f"AI: Promoted {new_healer.id} to Healer (Policy: {['Gathering', 'Balanced', 'Healing'][action]})")
+                current_healers += 1
+        elif current_healers > target_healers:
+             # Demote to Gatherer
+             healers = [p for p in living_pop if p.job == "Healer"]
+             if healers:
+                 fired = random.choice(healers)
+                 fired.set_job("Gatherer")
+                 self.log(f"AI: {fired.id} assigned to Gathering (Policy: {['Gathering', 'Balanced', 'Healing'][action]})")
+        
+        # 1. Resource Gathering
+        gathered = 0
+        
+        # Seasonal Modifiers
+        season = self.current_season
+        food_modifier = 1.0
+        metabolic_modifier = 0
+        
+        if season == "Summer":
+            food_modifier = 1.2 # Abundance
+        elif season == "Winter":
+            food_modifier = 0.5 # Scarcity
+            metabolic_modifier = 2 # Cold requires more energy
+        
+        # Global Healer Bonus calculation
+        # Each healer adds +5% recovery chance
+        global_healer_bonus = current_healers * 0.05
         
         for p in living_pop:
             # Check for traits
@@ -44,7 +162,24 @@ class World:
                 if 'foraging' in t['bonus']:
                     bonus += t['bonus']['foraging']
             
-            gathered += (10 + bonus)
+            # Base Production by Job
+            production = 10
+            if p.job == "Healer":
+                production = 5 # Healers gather less
+            # elif p.job == "Farmer": production = 20 (Future)
+            
+            # Use Personality Efficiency (Conscientiousness/Openness)
+            efficiency = p.get_gathering_efficiency(season)
+            
+            gathered += ((production + bonus) * food_modifier * efficiency)
+            
+        # Hunting Event (Sustainable Buff)
+        # Occasional Big Game Hunt to prevent total starvation spiral
+        if self.resources < len(living_pop) * 5: # If low on food
+            if random.random() < 0.1: # 10% chance per day when hungry
+                 hunt_yield = len(living_pop) * 5
+                 gathered += hunt_yield
+                 self.log(f"EVENT: The tribe successfully hunted a Mammoth! (+{hunt_yield} Food)")
             
         self.resources += gathered
         
@@ -63,7 +198,7 @@ class World:
                 self.resources -= food_needed
                 fed = True
             
-            p.update(food_available=fed, disease_data=self.diseases)
+            p.update(food_available=fed, disease_data=self.diseases, healer_bonus=global_healer_bonus, metabolic_cost_modifier=metabolic_modifier)
             
             # Check for Births
             if p.gender == 'Female' and p.is_pregnant:
@@ -92,7 +227,15 @@ class World:
         self._handle_reproduction(living_pop)
 
     def _handle_reproduction(self, living_pop):
-        if len(living_pop) >= 200: return # Cap population
+        pop_size = len(living_pop)
+        if pop_size >= 250: return # Hard Cap slightly higher
+        
+        # Density Dependent Fertility (Carrying Capacity)
+        density_modifier = 1.0
+        if pop_size > 150:
+             density_modifier = 0.2 # Drastic reduction
+        elif pop_size > 100:
+             density_modifier = 0.5 # Soft brake
         
         # Find potential couples
         males = [p for p in living_pop if p.gender == 'Male' and p.age >= 16] # Assuming Age is years again or huge tick number? Let's use 16 for now assuming initial gen is >16
@@ -114,11 +257,23 @@ class World:
             
             if partner:
                 females.remove(partner)
-                # Chance to mate
-                # Base 5% chance per day?
-                if random.random() < 0.05:
+
+                # Use Fertility Score
+                fertility_score = partner.calculate_fertility_score()
+                
+                # Base chance multiplier (daily)
+                # If Score is 1.0 (Peak), Annual chance ~10% -> Daily chance ~0.03%
+                # That's too low for simulation fun. Let's aim for annual chance ~50% for couples?
+                # Daily chance ~0.2%
+                
+                final_chance = fertility_score * 0.005 # 0.5% chance per day if peak fertility
+                
+                # Apply Density/Carrying Capacity Brake
+                final_chance *= density_modifier
+                    
+                if random.random() < final_chance:
                     if partner.get_pregnant(m.id):
-                        # self.log(f"{partner.id} became pregnant with {m.id}") # Optional detailed log
+                         # self.log(f"{partner.id} became pregnant with {m.id}") # Optional detailed log
                         pass
 
     def _handle_disease(self, living_pop):
@@ -150,8 +305,15 @@ class World:
                 for contact in contacts:
                     if contact.id == p.id: continue
                     
-                    # Chance = Base Rate - Genetic Resistance + Vulnerability
-                    chance = d_info['transmission_rate'] + (contact.genetic_vulnerability * 0.1)
+                    # Age Susceptibility
+                    age_group = "adult"
+                    if contact.age < 15: age_group = "child"
+                    elif contact.age > 50: age_group = "elder"
+                    
+                    susceptibility = d_info.get('age_factors', {}).get(age_group, {}).get('susceptibility', 1.0)
+                    
+                    # Chance = (Base Rate * Susceptibility) - Genetic Resistance
+                    chance = (d_info['transmission_rate'] * susceptibility) + (contact.genetic_vulnerability * 0.1)
                     # Check immune traits? (Not implemented deep yet)
                     
                     if random.random() < chance:
