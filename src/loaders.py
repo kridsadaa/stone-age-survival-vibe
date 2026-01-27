@@ -78,9 +78,29 @@ def generate_initial_state(count: int, traits_df: pd.DataFrame) -> pd.DataFrame:
         "skin_tone": np.random.random(count), # 0.0 (Light) to 1.0 (Dark)
         "libido": np.random.beta(2, 5, size=count), # Skewed slightly lower, but some high
         "attractiveness": np.random.normal(0.5, 0.15, size=count).clip(0, 1), # Bell curve
-        # Phase 4: Tribal System
+        # Phase 4: Tribal System & Spatial
         "tribe_id": np.random.choice(['Red_Tribe', 'Blue_Tribe', 'Green_Tribe'], size=count),
     })
+    
+    # Initialize Spatial Coordinates based on Tribe (Homelands)
+    # Red: Top-Left (0-40, 0-40)
+    # Blue: Top-Right (60-100, 0-40)
+    # Green: Bottom (30-70, 60-100)
+    
+    def get_start_pos(tribe):
+        if tribe == 'Red_Tribe':
+            return np.random.uniform(0, 40), np.random.uniform(0, 40)
+        elif tribe == 'Blue_Tribe':
+            return np.random.uniform(60, 100), np.random.uniform(0, 40)
+        elif tribe == 'Green_Tribe':
+            return np.random.uniform(30, 70), np.random.uniform(60, 100)
+        return 50.0, 50.0
+
+    # Apply spatial init
+    coords = [get_start_pos(t) for t in df['tribe_id']]
+    df['x'] = [c[0] for c in coords]
+    df['y'] = [c[1] for c in coords]
+    df['settlement_id'] = None # Will be assigned by SettlementSystem
     
     # Heuristic Job Assignment
     # Elders -> Healers

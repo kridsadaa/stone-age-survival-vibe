@@ -37,6 +37,14 @@ class WorldState:
         # Tribes Metadata
         self.tribes: Dict[str, Any] = {}
         
+        # Terrain Map (20x20 Grid)
+        self.map_data: pd.DataFrame = None 
+        
+        # Phase 5: Inventory (Agent ID, Item, Amount, Durability, MaxDurability, Spoilage)
+        self.inventory: pd.DataFrame = pd.DataFrame(columns=[
+            "agent_id", "item", "amount", "durability", "max_durability", "spoilage_rate"
+        ])
+        
         # Global Resources & Config
         self.globals: Dict[str, Any] = {
             "resources": 1000.0,
