@@ -1,5 +1,7 @@
 import json
 import pandas as pd
+import numpy as np
+import uuid
 import os
 from typing import List, Dict
 
@@ -37,3 +39,40 @@ def load_traits(filepath: str) -> pd.DataFrame:
     except Exception as e:
         print(f"Error loading traits CSV: {e}")
         return pd.DataFrame()
+
+def generate_initial_state(count: int, traits_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generates the initial population DataFrame.
+    """
+    ids = [f"HMN-{str(uuid.uuid4())[:8]}" for _ in range(count)]
+    ages = np.random.randint(0, 60, size=count).astype(float)
+    genders = np.random.choice(['Male', 'Female'], size=count)
+    
+    # Create DF
+    df = pd.DataFrame({
+        "id": ids,
+        "age": ages,
+        "gender": genders,
+        "job": "Gatherer",
+        "hp": 100.0,
+        "max_hp": 100.0,
+        "stamina": 100.0,
+        "is_alive": True,
+        "is_pregnant": False, 
+        "pregnancy_days": 0,
+        "partner_id": None,
+        "family_id": [f"FAM-{str(uuid.uuid4())[:8]}" for _ in range(count)], 
+        "cause_of_death": None,
+        # Ocean Traits (0.0 - 1.0)
+        "trait_openness": np.random.random(count),
+        "trait_conscientiousness": np.random.random(count),
+        "trait_extraversion": np.random.random(count),
+        "trait_agreeableness": np.random.random(count),
+        "trait_neuroticism": np.random.random(count),
+    })
+    
+    # Heuristic Job Assignment
+    # Elders -> Healers
+    df.loc[df['age'] > 50, 'job'] = 'Healer' 
+    
+    return df
