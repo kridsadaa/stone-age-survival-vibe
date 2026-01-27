@@ -49,12 +49,11 @@ if 'engine' not in st.session_state:
     engine.add_system(PoliticalSystem())
     # Phase 4 Systems
     engine.add_system(TechSystem())
-    # Phase 4 Systems
-    engine.add_system(TechSystem())
     engine.add_system(TribalSystem())
     engine.add_system(KnowledgeSystem())
     engine.add_system(SettlementSystem())
     engine.add_system(MapSystem())
+
     
     # Phase 5 Systems
     from src.systems.inventory import InventorySystem

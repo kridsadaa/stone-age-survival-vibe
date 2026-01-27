@@ -20,30 +20,55 @@ def load_diseases(filepath: str) -> List[Dict]:
         return []
 
 def load_traits(filepath: str) -> pd.DataFrame:
-    """Loads trait data from a CSV file."""
+    """Loads trait data from a CSV file with validation."""
+    # Check file existence
     if not os.path.exists(filepath):
-        print(f"Warning: Trait file not found at {filepath}")
-        return pd.DataFrame() # Return empty DF
-        
+        print(f"⚠️ Warning: Trait file not found at {filepath}, using defaults")
+        return pd.DataFrame()  # Return empty DF
+    
     try:
         df = pd.read_csv(filepath)
-        # Parse the survival_bonus column which is a string representation of a dict
-        # We'll do it safely using json.loads if it's strictly valid JSON, or eval if it's python dict str.
-        # Given the CSV format in the plan, it looks like valid JSON-ish or Python dict string.
-        # Let's use json.loads but replace single quotes with double if necessary, or better, strictly expect valid JSON in CSV.
-        # The input I wrote uses double quotes for keys, so it should be parseable as JSON if we are careful.
-        # Actually, standard pandas doesn't auto-parse dict columns.
+        
+        # Validate schema
+        required_columns = ['name', 'survival_bonus']
+        missing_cols = set(required_columns) - set(df.columns)
+        if missing_cols:
+            raise ValueError(f"Missing required columns: {missing_cols}")
+        
+        # Validate data
+        if df.empty:
+            print(f"⚠️ Warning: Trait file is empty at {filepath}")
+            return pd.DataFrame()
+        
+        # Parse survival_bonus column safely
         import ast
-        df['survival_bonus'] = df['survival_bonus'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else {})
+        try:
+            df['survival_bonus'] = df['survival_bonus'].apply(
+                lambda x: ast.literal_eval(x) if isinstance(x, str) else {}
+            )
+        except (ValueError, SyntaxError) as e:
+            print(f"⚠️ Warning: Failed to parse survival_bonus, using empty dict. Error: {e}")
+            df['survival_bonus'] = {}
+        
         return df
+        
+    except pd.errors.EmptyDataError:
+        print(f"❌ Error: Trait CSV is empty at {filepath}")
+        return pd.DataFrame()
     except Exception as e:
-        print(f"Error loading traits CSV: {e}")
+        print(f"❌ Error loading traits CSV from {filepath}: {type(e).__name__}: {e}")
         return pd.DataFrame()
 
 def generate_initial_state(count: int, traits_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Generates the initial population DataFrame.
+    Generates the initial population DataFrame with validation.
     """
+    # Validate inputs
+    if count <= 0:
+        raise ValueError(f"Population count must be positive, got {count}")
+    if count > 10000:
+        print(f"⚠️ Warning: Large population ({count}) may cause performance issues")
+    
     ids = [f"HMN-{str(uuid.uuid4())[:8]}" for _ in range(count)]
     ages = np.random.randint(0, 60, size=count).astype(float)
     genders = np.random.choice(['Male', 'Female'], size=count)

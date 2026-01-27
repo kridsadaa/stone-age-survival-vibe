@@ -71,9 +71,17 @@ class DiseaseSystem(System):
         
         # Patient Zero (Random living person)
         living = state.population[state.population['is_alive']]
-        if not living.empty:
+        if living.empty:
+            # No one alive to infect
+            return
+        
+        try:
             victim_id = np.random.choice(living['id'].values)
             self._infect(state, victim_id, disease.id)
+        except (ValueError, IndexError) as e:
+            # Edge case: living became empty during selection
+            print(f"⚠️ Warning: Could not select patient zero: {e}")
+            return
 
     def _infect(self, state, person_id, disease_id):
         disease = self.known_diseases[disease_id]
@@ -161,8 +169,16 @@ class DiseaseSystem(System):
             
             # Loop because we need immunity check per victim
             # (Vectorizing immunity check across varying immunity levels is hard)
+            if len(new_victims) == 0:
+                continue
+                
             for vid in new_victims:
-                self._infect(state, vid, d_id)
+                try:
+                    self._infect(state, vid, d_id)
+                except Exception as e:
+                    # Log but don't crash simulation
+                    print(f"⚠️ Warning: Failed to infect agent {vid}: {e}")
+                    continue
 
     def _handle_progression(self, state):
         if state.infections.empty: return

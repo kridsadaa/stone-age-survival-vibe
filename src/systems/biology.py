@@ -400,7 +400,12 @@ class BiologySystem(System):
                     m_vul = man.get('genetic_vulnerability', 0.1)
                     vul_score = 1.0 - ((w_vul + m_vul) / 2.0)
                     
-                    health_score = (man['hp'] / man['max_hp'])
+                    # Validate max_hp to prevent division by zero
+                    man_max_hp = man.get('max_hp', 100.0)
+                    if man_max_hp <= 0:
+                        man_max_hp = 100.0
+                    
+                    health_score = (man['hp'] / man_max_hp)
                     attr_stat = man.get('attractiveness', 0.5)
                     w_skin = woman.get('skin_tone', 0.5)
                     m_skin = man.get('skin_tone', 0.5)
