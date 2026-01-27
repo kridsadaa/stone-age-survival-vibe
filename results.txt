@@ -1,0 +1,5 @@
+FAILED: The tribe has perished.
+
+Causes of Death:
+cause_of_death
+Health Failure    623

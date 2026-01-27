@@ -33,7 +33,7 @@ class ClimateSystem(System):
         # Cosine wave: +1 at 0, -1 at pi.
         # We want Peak at day 172 (June 21)
         phase = (day_of_year - 172) / 365.0 * 2 * math.pi
-        seasonal_temp = -math.cos(phase) * season_amp
+        seasonal_temp = math.cos(phase) * season_amp
         
         if lat < 0: # Southern Hemisphere flips
             seasonal_temp *= -1

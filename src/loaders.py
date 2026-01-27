@@ -69,6 +69,10 @@ def generate_initial_state(count: int, traits_df: pd.DataFrame) -> pd.DataFrame:
         "trait_extraversion": np.random.random(count),
         "trait_agreeableness": np.random.random(count),
         "trait_neuroticism": np.random.random(count),
+        # Psychology State
+        "happiness": 100.0,
+        "rebellion": 0.0,
+        "criminal_history": 0,
     })
     
     # Heuristic Job Assignment

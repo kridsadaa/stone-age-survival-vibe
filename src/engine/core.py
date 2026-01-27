@@ -74,9 +74,9 @@ class SimulationEngine:
     def add_system(self, system: System):
         self.systems.append(system)
         
-    def tick(self):
+    def tick(self, force=False):
         """Execute one simulation step"""
-        if self.paused:
+        if self.paused and not force:
             return
 
         self.state.day += 1
@@ -113,7 +113,14 @@ class SimulationEngine:
                 continue
                 
             start_t = time.time()
-            self.tick()
+            try:
+                self.tick()
+            except Exception as e:
+                print(f"❌ SIMULATION CRASHED: {e}")
+                import traceback
+                traceback.print_exc()
+                self.paused = True
+                self.running = False
             elapsed = time.time() - start_t
             
             # FPS Limiter
