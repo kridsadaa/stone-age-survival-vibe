@@ -1,11 +1,11 @@
 trait_name,genetic_probability,survival_bonus
-Sharp Eyes,0.2,{"foraging": 2}
-Robust,0.15,{"hp": 10}
-Fast Runner,0.25,{"hunting": 2}
-Loner,0.1,{"social": -2, "stealth": 2}
-Charismatic,0.1,{"social": 3}
-Sickly,0.05,{"hp": -10, "disease_vuln": 0.2}
-Iron Stomach,0.1,{"food_poisoning_resist": 0.5}
-Hemophilia,0.02,{"hp": -20, "bleed_risk": 1.0}
-Weak Lungs,0.03,{"stamina": -20, "disease_vuln": 0.3}
-Giantism,0.01,{"hp": 30, "stamina": -10, "food_need": 2}
+Sharp Eyes,0.2,"{""foraging"": 2}"
+Robust,0.15,"{""hp"": 10}"
+Fast Runner,0.25,"{""hunting"": 2}"
+Loner,0.1,"{""social"": -2, ""stealth"": 2}"
+Charismatic,0.1,"{""social"": 3}"
+Sickly,0.05,"{""hp"": -10, ""disease_vuln"": 0.2}"
+Iron Stomach,0.1,"{""food_poisoning_resist"": 0.5}"
+Hemophilia,0.02,"{""hp"": -20, ""bleed_risk"": 1.0}"
+Weak Lungs,0.03,"{""stamina"": -20, ""disease_vuln"": 0.3}"
+Giantism,0.01,"{""hp"": 30, ""stamina"": -10, ""food_need"": 2}"

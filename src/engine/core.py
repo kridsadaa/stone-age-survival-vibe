@@ -3,6 +3,7 @@ from typing import Dict, List, Any
 import time
 import threading
 from .systems import System
+from .storage import ArchiveManager
 
 class WorldState:
     """
@@ -70,6 +71,7 @@ class SimulationEngine:
         self._thread = None
         self.tps_limit = 20 # Ticks Per Second Limit
         self.simulation_speed = 1.0 # Multiplier
+        self.archiver = ArchiveManager()
         
     def add_system(self, system: System):
         self.systems.append(system)
@@ -87,6 +89,10 @@ class SimulationEngine:
         # Run Systems
         for system in self.systems:
             system.update(self.state)
+            
+        # Optimization: Archive Dead
+        if self.state.day % 30 == 0:
+            self.state.population = self.archiver.archive_dead(self.state.population)
             
     def start(self):
         """Start background processing"""
@@ -119,6 +125,9 @@ class SimulationEngine:
                 print(f"❌ SIMULATION CRASHED: {e}")
                 import traceback
                 traceback.print_exc()
+                with open("crash.log", "w") as f:
+                    f.write(f"Crash at Day {self.state.day}:\n")
+                    f.write(traceback.format_exc())
                 self.paused = True
                 self.running = False
             elapsed = time.time() - start_t

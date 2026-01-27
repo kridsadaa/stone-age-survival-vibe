@@ -27,7 +27,6 @@ if 'engine' not in st.session_state:
     engine.add_system(ClimateSystem())
     engine.add_system(EconomySystem())
     engine.add_system(GeneticsSystem())
-    engine.add_system(GeneticsSystem())
     engine.add_system(CultureSystem())
     engine.add_system(PsychologySystem())
     engine.add_system(SocialSystem())
@@ -121,10 +120,16 @@ st.title(f"🗿 Stone Age Survival: Generative World (Day {state.day})")
 living_df = state.population[state.population['is_alive']]
 dead_count = len(state.population) - len(living_df)
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Population", len(living_df), delta=f"-{dead_count} Dead")
 col2.metric("Season", state.current_season, delta=f"{state.globals.get('temperature', 0):.1f}°C")
 col3.metric("Food", f"{state.globals['resources']:.0f}", delta=f"Biome: {state.globals.get('biome', 'Unknown')}")
+
+weather_desc = f"{state.globals.get('precipitation', 'Clear')}"
+if state.globals.get('wind_speed', 0) > 40: weather_desc += " 🌪️"
+
+col4.metric("Weather", weather_desc, delta=f"Hum: {state.globals.get('humidity', 0):.0%} | Wind: {state.globals.get('wind_speed', 0):.0f}km/h")
+col5.metric("UV Index", f"{state.globals.get('uv_index', 0):.1f}", delta="Risk Level")
 
 # Disease Stats
 active_infections = 0
@@ -199,6 +204,12 @@ with tab_genetics:
         # Histogram
         st.bar_chart(living_df['genetic_vulnerability'])
         
+        st.markdown("#### Skin Tone Distribution")
+        if 'skin_tone' in living_df.columns:
+            st.bar_chart(living_df['skin_tone'])
+        else:
+            st.info("Skin tone data not available yet (wait for next gen).")
+        
     st.info("Genetic Vulnerability increases with inbreeding (parents with similar genomes). High vulnerability leads to weaker immunity.")
 
 with tab_psych:
@@ -220,6 +231,22 @@ with tab_psych:
         # Ocean Distribution
         st.markdown("#### Personality Types (OCEAN)")
         st.scatter_chart(living_df, x='trait_openness', y='trait_conscientiousness', color='job')
+        
+        # Deep Psychology Split
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### ❤️ Libido & Attractiveness")
+            if 'libido' in living_df.columns:
+                 st.scatter_chart(living_df, x='libido', y='attractiveness', color='gender')
+            else:
+                 st.info("No Libido data.")
+                 
+        with c2:
+            st.markdown("#### 🧠 Impulse Control (Prefrontal Cortex)")
+            # Control = min(1.0, Age/25)
+            # Visualize Age vs Rebellion to show the correlation
+            st.scatter_chart(living_df, x='age', y='rebellion', color='trait_neuroticism')
+            st.caption("Note: Youth (Age < 25) have higher rebellion/volatility due to undeveloped brains.")
 
 with tab_spirit:
     st.subheader("👻 The Spirit of the Tribe (AI)")

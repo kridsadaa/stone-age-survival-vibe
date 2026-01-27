@@ -55,9 +55,30 @@ class PsychologySystem(System):
         order_lovers = (df['trait_conscientiousness'] > 0.7) & (m_strict > 0.5) & live_mask
         df.loc[order_lovers, 'happiness'] += 1.0
 
-        # Clamp Happiness
         df.loc[live_mask, 'happiness'] = df.loc[live_mask, 'happiness'].clip(0, 100)
         
+        # 3.5 Brain Development (Prefrontal Cortex)
+        # Age < 25 implies impulse control issues.
+        # This manifests as higher Volatility (Mood swings) and Rebellion.
+        young_mask = (df['age'] < 25) & live_mask
+        if young_mask.any():
+            # Impulse Control = Age / 25.0
+            # Volatility increases as control decreases.
+            # We model this by randomly fluctuating happiness and increasing rebellion sensitivity
+            
+            # 1. Mood Swings (Random +/- Happiness)
+            # Magnitude = (1.0 - control) * 5.0
+            control_factor = df.loc[young_mask, 'age'] / 25.0
+            volatility = (1.0 - control_factor) * 5.0
+            
+            # Vectorized random noise
+            noise = np.random.uniform(-1, 1, size=young_mask.sum()) * volatility
+            df.loc[young_mask, 'happiness'] += noise
+            
+            # 2. Impulsivity (Higher Baseline Rebellion)
+            # Young people are naturally more rebellious
+            df.loc[young_mask, 'rebellion'] += (1.0 - control_factor) * 0.05
+            
         # 4. Rebellion Calculation
         # Rebellion grows if Happiness < 30
         # Multiplied by Neuroticism (Sensitivity to stress)

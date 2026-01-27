@@ -1,5 +1,6 @@
 import math
 import numpy as np
+import random
 from src.engine.systems import System
 
 class ClimateSystem(System):
@@ -10,57 +11,87 @@ class ClimateSystem(System):
     - Seasons: Orbital mechanics approximation.
     """
     def update(self, state):
-        # 1. Get Params from Globals (Defaults if not set)
-        lat = state.globals.get('latitude', 45.0) # Degrees
-        elevation = state.globals.get('elevation', 0.0) # Meters
-        
-        # 2. Orbital Mechanics (Day of Year 0-365)
+        # 1. Get Params
+        lat = state.globals.get('latitude', 45.0)
+        elevation = state.globals.get('elevation', 100.0)
         day_of_year = state.day % 365
         
-        # 3. Calculate Temperature
-        # Base Temp at Eqautor approx 30C, Poles approx -20C
-        # Simple formula: T = 30 - 50 * sin(lat)^2 (approx)
-        # Actually linear interpolation is easier to control for game:
-        # Equator (0): 30C, Pole (90): -30C
+        # 2. Orbital / Base Temp
+        # Equator (0) -> 30C, Pole (90) -> -30C
         base_temp = 30.0 - (abs(lat) / 90.0 * 60.0)
         
-        # Seasonal Swing
-        # Swing amplitude increases with latitude
-        # Equator: 0 variation. Poles: +/- 20 variation.
+        # Season Offset (Peak Day 172)
         season_amp = (abs(lat) / 90.0) * 20.0
-        
-        # Season Offset (Peak Summer day ~180 in N Hemisphere)
-        # Cosine wave: +1 at 0, -1 at pi.
-        # We want Peak at day 172 (June 21)
         phase = (day_of_year - 172) / 365.0 * 2 * math.pi
         seasonal_temp = math.cos(phase) * season_amp
+        if lat < 0: seasonal_temp *= -1
         
-        if lat < 0: # Southern Hemisphere flips
-            seasonal_temp *= -1
-            
-        # Elevation Lapse Rate
-        # Standard: -6.5C per 1000m
         altitude_cooling = (elevation / 1000.0) * 6.5
         
-        # Diurnal Cycle (Day/Night)
-        # Peak heat at 2pm, min at 4am
-        # Simplified: Sine wave based on hour (if we had hours)
-        # Assume daily mean stored in globals
-        
-        daily_temp = base_temp + seasonal_temp - altitude_cooling
-        
-        # Adding randomness (Weather fronts)
-        # Should be coherent day-to-day, but simple random for now
+        # 3. Advanced Wether Generation
+        # Random noise handles fronts
         weather_noise = np.random.normal(0, 2.0)
         
-        current_temp = daily_temp + weather_noise
+        # Humidity (0.0 - 1.0)
+        # Higher at equator, lower at poles, random variance
+        base_humid = 0.5 + (0.3 * math.cos(math.radians(lat))) # More humid at equator
+        current_humid = np.clip(base_humid + np.random.normal(0, 0.2), 0.1, 1.0)
+        
+        # Cloud Cover (Correlated with Humidity)
+        cloud_cover = 0.0
+        if current_humid > 0.6:
+            cloud_cover = (current_humid - 0.6) * 2.5 # 0.0 to 1.0
+        
+        # Precipitation
+        precip = "None"
+        if cloud_cover > 0.7 and random.random() < (current_humid * 0.5):
+            # Rain or Snow?
+            precip = "Rain"
+            
+        # Wind Speed (0 - 100 km/h)
+        # Random storms
+        wind_speed = abs(np.random.normal(10, 15)) 
+        if random.random() < 0.05: wind_speed += 40 # Storm gust
+        
+        # 4. Temperature Final Calculation
+        # Clouds trap heat at night, block sun at day.
+        # Simple: Clouds reduce max temp
+        temp_mod = 0
+        if cloud_cover > 0.5: temp_mod = -3.0
+        
+        current_temp = base_temp + seasonal_temp - altitude_cooling + weather_noise + temp_mod
+        
+        if precip == "Rain" and current_temp < 0:
+            precip = "Snow"
+            
+        # 5. UV Index Calculation (0 - 11+)
+        # Factors: Latitude (Closer to 0 is higher), Season (Summer higher), Cloud Cover (Blocks), Elevation (Higher is worse)
+        
+        # Base UV by Lat (0 deg -> 10, 90 deg -> 0)
+        uv_base = 10.0 * (1.0 - (abs(lat) / 90.0))
+        
+        # Season Multiplier (Summer 1.5x, Winter 0.5x)
+        # Reuse phase cosine
+        # If North Hem: Summer is max cosine.
+        uv_season = 1.0 + (math.cos(phase) * 0.5 * (1 if lat >= 0 else -1))
+        
+        # Cloud Block
+        uv_cloud = 1.0 - (cloud_cover * 0.8) # Clouds block up to 80%
+        
+        # Elevation Boost (+10% per 1000m)
+        uv_elev = 1.0 + (elevation / 10000.0)
+        
+        current_uv = uv_base * uv_season * uv_cloud * uv_elev
+        current_uv = max(0.0, current_uv)
         
         # Update State
         state.globals['temperature'] = current_temp
+        state.globals['humidity'] = current_humid
+        state.globals['wind_speed'] = wind_speed
+        state.globals['precipitation'] = precip
+        state.globals['uv_index'] = current_uv
         
-        # Determine Biome (Simple classification logic)
-        # Rainfall assumed static/random for now, or could map to lat (ITCZ, Horse Latitudes)
-        # Let's simple heuristic for visualization
+        # Determine Biome (Keep existing logic but upgrade later)
         if current_temp < -10:
             state.globals['biome'] = 'Tundra/Ice'
         elif current_temp < 0 and elevation > 2000:
@@ -72,4 +103,4 @@ class ClimateSystem(System):
         else:
             state.globals['biome'] = 'Temperate Forest'
 
-        state.globals['is_night'] = False # Todo: Intra-day cycle
+        state.globals['is_night'] = False

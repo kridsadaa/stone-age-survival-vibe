@@ -116,4 +116,40 @@ class GeneticsSystem(System):
         vul = min(1.0, vul)
         
         state.population.at[child_idx, 'genome'] = child_genome
+        vul = similarity ** 4.0
+        
+        # Cap
+        vul = min(1.0, vul)
+        
+        state.population.at[child_idx, 'genome'] = child_genome
         state.population.at[child_idx, 'genetic_vulnerability'] = vul
+        
+        # --- Deep Psychology: Nature vs Nurture ---
+        # 50% Parents (Avg), 50% Experience (Random)
+        traits = ['trait_openness', 'trait_conscientiousness', 'trait_extraversion', 
+                  'trait_agreeableness', 'trait_neuroticism', 'libido', 'attractiveness', 'skin_tone']
+        
+        for t in traits:
+            # Check if parents have this trait (compatibility)
+            if t in mom and t in dad:
+                m_val = mom.iloc[0].get(t, 0.5)
+                d_val = dad.iloc[0].get(t, 0.5)
+                
+                avg_parent = (m_val + d_val) / 2.0
+                experience = random.random() # Random noise
+                # For Attractiveness, skew slightly higher if healthy parents? 
+                if t == 'attractiveness':
+                     experience = random.gauss(0.5, 0.15)
+                elif t == 'libido':
+                     experience = random.betavariate(2, 5)
+                     
+                # 50/50 Mix
+                final_val = (0.5 * avg_parent) + (0.5 * experience)
+                
+                # Mutation / Drift
+                final_val += random.gauss(0, 0.05)
+                
+                # Clip
+                final_val = max(0.0, min(1.0, final_val))
+                
+                state.population.at[child_idx, t] = final_val

@@ -64,6 +64,31 @@ class BiologySystem(System):
             # Clamp stamina to 0
             df.loc[starving_mask, 'stamina'] = 0.0
             
+        # 3.1 Environmental Effects (Evolutionary Pressure)
+        uv_index = state.globals.get('uv_index', 0.0)
+        
+        # A. Sunburn (High UV)
+        if uv_index > 7.0:
+            # Pale skin burns
+            # Threshold: skin_tone < 0.3 (Very pale)
+            # Damage increases with UV and lack of melanin
+            burn_mask = (df['skin_tone'] < 0.3) & live_mask
+            if burn_mask.any():
+                # Damage = (UV - 7) * (1 - skin_tone)
+                # e.g. UV 10, Skin 0.1 -> 3 * 0.9 = 2.7 dmg
+                burn_dmg = (uv_index - 7.0) * (0.5 - df.loc[burn_mask, 'skin_tone'])
+                burn_dmg = np.clip(burn_dmg, 0.0, 5.0)
+                df.loc[burn_mask, 'hp'] -= burn_dmg
+                
+        # B. Vitamin D Deficiency (Low UV)
+        elif uv_index < 2.0:
+            # Dark skin cannot synthesize Vit D
+            # Threshold: skin_tone > 0.7
+            defic_mask = (df['skin_tone'] > 0.7) & live_mask
+            if defic_mask.any():
+                # Slow decay of health (Rickets/Immune fail)
+                df.loc[defic_mask, 'hp'] -= 0.5
+            
         # 3.5 Natural Healing
         # If Fed (Stamina > 80) and Not Old (< 60)
         # TODO: Check for active disease? (Complex)
@@ -175,6 +200,9 @@ class BiologySystem(System):
                     "trait_extraversion": np.random.random(num_births),
                     "trait_agreeableness": np.random.random(num_births),
                     "trait_neuroticism": np.random.random(num_births),
+                    # Phenotype Inheritance
+                    # Ideally average of Mom + Dad. For now, Mom + Mutation
+                    "skin_tone": np.clip(mothers['skin_tone'].values + np.random.normal(0, 0.1, num_births), 0.0, 1.0),
                 })
                 
                 # Append to Population
@@ -205,94 +233,162 @@ class BiologySystem(System):
         ).sum()
         
         if eligible_women.any() and eligible_men_count > 0:
-            # Chance of conception per day
-            base_chance = 0.007
+            # Chance of "Interest" per day (Base Libido check)
+            # Use Libido attribute if available, else default 0.5
+            if 'libido' not in df.columns: df['libido'] = 0.5
+            if 'attractiveness' not in df.columns: df['attractiveness'] = 0.5
             
-            rng = np.random.random(len(df)) # Use full length mask for alignment simplified
-            # Re-masking
-            women_indices = df[eligible_women].index
+            # Vectorized Interest Check
+            # Roll < 0.01 * Libido
+            # High Libido (0.9) = 0.9% daily chance. Low (0.1) = 0.1% chance.
+            interest_rolls = np.random.random(len(df))
+            interest_threshold = df['libido'] * 0.02 # approx 2% max daily chance for hyper-sexual agents
             
-            # Roll for each eligible woman
-            conceptions = []
-            for w_idx in women_indices:
-                if random.random() < base_chance:
-                    conceptions.append(w_idx)
+            interested_mask = eligible_women & (interest_rolls < interest_threshold)
             
-            if conceptions:
-                # Assign Partners
-                eligible_men_ids = df[
-                    (df['gender'] == 'Male') &
-                    (df['age'] >= FERTILITY_MIN_AGE_M) &
-                    (df['age'] <= FERTILITY_MAX_AGE_M) &
-                    live_mask
-                ]['id'].values
+            if not interested_mask.any():
+                return
                 
-                if len(eligible_men_ids) == 0: return
+            women_indices = df[interested_mask].index
+            
+            # Prepare Men Pool (Candidate list)
+            # Optimization: Pre-fetch men data
+            eligible_men_ids = df[
+                (df['gender'] == 'Male') &
+                (df['age'] >= FERTILITY_MIN_AGE_M) &
+                (df['age'] <= FERTILITY_MAX_AGE_M) &
+                live_mask
+            ]['id'].values
+            
+            if len(eligible_men_ids) == 0: return
 
-                policy = state.globals.get('policy_mating', 'FreeForAll')
+            men_data = df.loc[df['id'].isin(eligible_men_ids)].copy().set_index('id')
+            
+            # Policy Strictness
+            strictness = state.globals.get('policy_mating_strictness', 0.5)
+            
+            valid_pregnancies = []
+            final_partners = []
+            
+            # Iterate interested women
+            for w_idx in women_indices:
+                woman = df.loc[w_idx]
                 
-                valid_pregnancies = []
-                final_partners = []
+                # 1. Pick Candidates (Sample 3 men to evaluate)
+                # "The Dating Scene"
+                sample_size = min(3, len(eligible_men_ids))
+                candidates_ids = np.random.choice(eligible_men_ids, size=sample_size, replace=False)
                 
-                # Optimization: Pre-fetch men data for O(1) lookup
-                # This prevents O(N) scan inside the loop
-                men_data = df.loc[df['id'].isin(eligible_men_ids)].set_index('id')
+                best_partner = None
+                best_score = -1.0
                 
-                # Pick candidates
-                # Optimization: Block process per woman
-                for w_idx in conceptions:
-                    partner_cand = random.choice(eligible_men_ids)
+                for m_id in candidates_ids:
+                    man = men_data.loc[m_id]
                     
-                    woman = df.loc[w_idx]
+                    # --- ATTRACTION ALGORITHM ---
                     
-                    # Fast Lookup
-                    partner = men_data.loc[partner_cand]
+                    # A. Physical (40%)
+                    # 1. Genetic Compatibility (Low Vulnerability is attractive)
+                    # 2. Health (HP/Stamina)
+                    # 3. Attractiveness Stat (Face/Body)
+                    # 4. Skin Tone Preference (Assortative: Similar attracts - debatable but standard model)
                     
-                    is_incest = False
+                    w_vul = woman.get('genetic_vulnerability', 0.1)
+                    m_vul = man.get('genetic_vulnerability', 0.1)
+                    vul_score = 1.0 - ((w_vul + m_vul) / 2.0) # Lower vul = Higher score
                     
-                    # Incest Check
-                    # 1. Sibling (Share Mom or Dad)
-                    # Handle Nan/None carefully
-                    w_mom = woman['mother_id']
-                    w_dad = woman['father_id']
-                    p_mom = partner['mother_id']
-                    p_dad = partner['father_id']
+                    health_score = (man['hp'] / man['max_hp'])
+                    attr_stat = man.get('attractiveness', 0.5)
                     
-                    if (w_mom is not None and w_mom == p_mom) or \
-                       (w_dad is not None and w_dad == p_dad):
-                        is_incest = True
+                    # Skin Tone Match (1.0 = Same, 0.0 = Opposite)
+                    # Let's say 70% prefer similar, 30% random 'exotic' preference? 
+                    # Simple: Just use similarity for now
+                    w_skin = woman.get('skin_tone', 0.5)
+                    m_skin = man.get('skin_tone', 0.5)
+                    skin_sim = 1.0 - abs(w_skin - m_skin)
+                    
+                    physical_score = (0.2 * vul_score) + (0.3 * health_score) + (0.4 * attr_stat) + (0.1 * skin_sim)
+                    
+                    # B. Status (30%)
+                    # Job Prestige
+                    job_rank = {'Chief': 1.0, 'Healer': 0.8, 'Builder': 0.6, 'Hunter': 0.6, 'Gatherer': 0.4, 'Child': 0.0}
+                    status_score = job_rank.get(man['job'], 0.4)
+                    
+                    # Age Penalty (Too old/Too young gaps)
+                    age_diff = abs(woman['age'] - man['age'])
+                    if age_diff > 15: status_score *= 0.7 # Penalty for huge gap
+                    
+                    # C. Chemistry (30%)
+                    chemistry = random.random()
+                    
+                    # TOTAL
+                    total_score = (0.4 * physical_score) + (0.3 * status_score) + (0.3 * chemistry)
+                    
+                    # Update Best
+                    if total_score > best_score:
+                        best_score = total_score
+                        best_partner = man
+                
+                if not best_partner is None:
+                    # Decision: Is he good enough?
+                    # Woman's standard derived from her own attractiveness + narcissism?
+                    # Base threshold 0.5
+                    # High Libido Lowers threshold
+                    threshold = 0.6 - (woman.get('libido', 0.5) * 0.2) 
+                    
+                    if best_score > threshold:
+                        # --- APPROVAL PHASE ---
+                        approved = True
+                        is_eloping = False
                         
-                    # 2. Parent-Child
-                    if w_mom == partner_cand or w_dad == partner_cand or \
-                       p_mom == woman['id'] or p_dad == woman['id']:
-                        is_incest = True
+                        # Incest Check (Always Forbidden biologically)
+                        w_mom = woman['mother_id']
+                        w_dad = woman['father_id']
+                        p_mom = best_partner['mother_id']
+                        p_dad = best_partner['father_id']
                         
-                    # Policy Enforcer (Dynamic Slider)
-                    strictness = state.globals.get('policy_mating_strictness', 0.5)
-                    approved = True
-                    
-                    # Level 1: Anti-Incest (Strictness > 0.4)
-                    if strictness > 0.4 and is_incest:
-                        approved = False
-                        
-                    # Level 2: Eugenics (Strictness > 0.8)
-                    # Reject if either parent has high genetic vulnerability
-                    if strictness > 0.8:
-                        w_vul = woman.get('genetic_vulnerability', 0.0)
-                        p_vul = partner.get('genetic_vulnerability', 0.0)
-                        # Nan safety
-                        if pd.isna(w_vul): w_vul = 0.0
-                        if pd.isna(p_vul): p_vul = 0.0
-                        
-                        if w_vul > 0.4 or p_vul > 0.4:
+                        # Siblings
+                        if (w_mom is not None and w_mom == p_mom) or \
+                           (w_dad is not None and w_dad == p_dad):
                             approved = False
-                    
-                    if approved:
-                        valid_pregnancies.append(w_idx)
-                        final_partners.append(partner_cand)
-                
-                # Apply
-                if valid_pregnancies:
-                    df.loc[valid_pregnancies, 'is_pregnant'] = True
-                    df.loc[valid_pregnancies, 'pregnancy_days'] = 0
-                    df.loc[valid_pregnancies, 'partner_id'] = final_partners
+                        
+                        # Parent-Child
+                        if w_mom == best_partner.name or w_dad == best_partner.name or \
+                           p_mom == woman['id'] or p_dad == woman['id']:
+                            approved = False
+                            
+                        # Policy Check vs Rebellion
+                        if approved:
+                            # Policy logic
+                            policy_reject = False
+                            
+                            # Eugenics Check
+                            if strictness > 0.8:
+                                # Reject if genetic vul is high
+                                if best_partner.get('genetic_vulnerability', 0) > 0.4:
+                                    policy_reject = True
+                                    
+                            # Anti-Incest Check (Cousins etc - we don't track cousins deep enough yet, so assume name check ok)
+                            if strictness > 0.5:
+                                # Extra rigorous checking?
+                                pass
+                                
+                            if policy_reject:
+                                # ELOPEMENT CHECK
+                                # If Attraction is VERY HIGH (>0.8) AND Libido > Strictness
+                                avg_libido = (woman.get('libido', 0.5) + best_partner.get('libido', 0.5)) / 2
+                                if best_score > 0.8 and avg_libido > strictness:
+                                    is_eloping = True
+                                    state.log(f"💘 SECRET ROMANCE! {woman['id']} eloped with {best_partner.name} defying tribal law!")
+                                else:
+                                    approved = False
+                        
+                        if approved:
+                            valid_pregnancies.append(w_idx)
+                            final_partners.append(best_partner.name)
+
+            # Apply
+            if valid_pregnancies:
+                df.loc[valid_pregnancies, 'is_pregnant'] = True
+                df.loc[valid_pregnancies, 'pregnancy_days'] = 0
+                df.loc[valid_pregnancies, 'partner_id'] = final_partners

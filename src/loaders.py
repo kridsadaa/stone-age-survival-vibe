@@ -73,6 +73,11 @@ def generate_initial_state(count: int, traits_df: pd.DataFrame) -> pd.DataFrame:
         "happiness": 100.0,
         "rebellion": 0.0,
         "criminal_history": 0,
+        "criminal_history": 0,
+        # Phenotypes
+        "skin_tone": np.random.random(count), # 0.0 (Light) to 1.0 (Dark)
+        "libido": np.random.beta(2, 5, size=count), # Skewed slightly lower, but some high
+        "attractiveness": np.random.normal(0.5, 0.15, size=count).clip(0, 1), # Bell curve
     })
     
     # Heuristic Job Assignment
