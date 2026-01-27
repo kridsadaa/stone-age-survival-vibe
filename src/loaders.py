@@ -60,7 +60,7 @@ def generate_initial_state(count: int, traits_df: pd.DataFrame) -> pd.DataFrame:
         "is_alive": True,
         "is_pregnant": False, 
         "pregnancy_days": 0,
-        "partner_id": None,
+        # partner_id Removed
         "family_id": [f"FAM-{str(uuid.uuid4())[:8]}" for _ in range(count)], 
         "cause_of_death": None,
         # Ocean Traits (0.0 - 1.0)
@@ -78,6 +78,8 @@ def generate_initial_state(count: int, traits_df: pd.DataFrame) -> pd.DataFrame:
         "skin_tone": np.random.random(count), # 0.0 (Light) to 1.0 (Dark)
         "libido": np.random.beta(2, 5, size=count), # Skewed slightly lower, but some high
         "attractiveness": np.random.normal(0.5, 0.15, size=count).clip(0, 1), # Bell curve
+        # Phase 4: Tribal System
+        "tribe_id": np.random.choice(['Red_Tribe', 'Blue_Tribe', 'Green_Tribe'], size=count),
     })
     
     # Heuristic Job Assignment

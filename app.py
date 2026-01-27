@@ -12,6 +12,9 @@ from src.systems.culture import CultureSystem
 from src.systems.psychology import PsychologySystem
 from src.systems.social import SocialSystem
 from src.systems.politics import PoliticalSystem
+from src.systems.tech import TechSystem
+from src.systems.tribe import TribalSystem
+from src.systems.knowledge import KnowledgeSystem
 from src.loaders import load_traits, generate_initial_state
 
 st.set_page_config(page_title="Stone Age Survival 2.0", layout="wide")
@@ -31,6 +34,10 @@ if 'engine' not in st.session_state:
     engine.add_system(PsychologySystem())
     engine.add_system(SocialSystem())
     engine.add_system(PoliticalSystem())
+    # Phase 4 Systems
+    engine.add_system(TechSystem())
+    engine.add_system(TribalSystem())
+    engine.add_system(KnowledgeSystem())
     
     # Load Data
     traits = load_traits('data/traits.csv')
@@ -138,7 +145,7 @@ if hasattr(state, 'infections') and not state.infections.empty:
 col4.metric("Infected", active_infections, delta="Active Cases")
 
 # --- Tabs ---
-tab_overview, tab_health, tab_genetics, tab_psych, tab_spirit, tab_raw = st.tabs(["Overview", "Health", "Genetics", "Psychology", "Tribal Spirit", "Data Inspector"])
+tab_overview, tab_health, tab_genetics, tab_psych, tab_social, tab_civ, tab_spirit, tab_raw = st.tabs(["Overview", "Health", "Genetics", "Psychology", "Social Structure", "Civilization", "Tribal Spirit", "Data Inspector"])
 
 with tab_overview:
     # Charts (Sampled for performance)
@@ -247,6 +254,100 @@ with tab_psych:
             # Visualize Age vs Rebellion to show the correlation
             st.scatter_chart(living_df, x='age', y='rebellion', color='trait_neuroticism')
             st.caption("Note: Youth (Age < 25) have higher rebellion/volatility due to undeveloped brains.")
+
+with tab_social:
+    st.subheader("🕸️ Social Web (Kinship & Affairs)")
+    
+    if hasattr(state, 'relationships') and not state.relationships.empty:
+        rels = state.relationships
+        
+        # Stats
+        r_counts = rels['type'].value_counts()
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Connections", len(rels))
+        c2.metric("❤️ Lovers/Spouses", r_counts.get('Lover', 0) + r_counts.get('Spouse', 0))
+        c3.metric("💔 Ex-Partners", r_counts.get('Ex', 0))
+        
+        st.markdown("#### Relationship Types")
+        st.bar_chart(r_counts)
+        
+        st.markdown("#### Recent Romances")
+        # Show last 10
+        recent = rels.sort_values('start_day', ascending=False).head(10)
+        st.dataframe(recent)
+        
+        # Family Sizes (Children count per mother)
+        # We can aggregate from population 'mother_id'
+        if 'mother_id' in living_df.columns:
+            kids_count = living_df['mother_id'].value_counts()
+            st.markdown("#### Top Mothers (Most Children)")
+            st.bar_chart(kids_count.head(20))
+            
+    else:
+        st.info("No social web formed yet (Wait for relationships to form).")
+
+with tab_civ:
+    st.subheader("🏛️ Civilization & Technology")
+    
+    # 1. Era & Evo Score
+    era = state.globals.get('era', 'Paleolithic')
+    score = state.globals.get('evo_score', 0)
+    
+    e1, e2 = st.columns([3, 1])
+    e1.metric("Current Era", era, delta=f"Evo Score: {score:.0f}")
+    
+    # Progress Bar based on Era
+    thresholds = {'Paleolithic': 500, 'Mesolithic': 1500, 'Neolithic': 5000, 'Bronze Age': 10000}
+    target = thresholds.get(era, 10000)
+    # If Era is Bronze Age, we are max?
+    if era == 'Bronze Age':
+        st.progress(1.0)
+    else:
+        prog = min(1.0, score / target)
+        st.progress(prog, text=f"Progress to Next Age ({prog:.1%})")
+        
+    st.markdown("---")
+    
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.subheader("⚔️ Distinct Tribes")
+        if 'tribe_id' in living_df.columns:
+            # Pie Chart
+            tribe_counts = living_df['tribe_id'].value_counts().reset_index()
+            tribe_counts.columns = ['Tribe', 'Count']
+            
+            # Custom Colors if we can map them?
+            # Altair allows domain/range colors
+            base = alt.Chart(tribe_counts).encode(theta=alt.Theta("Count", stack=True))
+            pie = base.mark_arc(outerRadius=120).encode(
+                color=alt.Color("Tribe"),
+                tooltip=["Tribe", "Count"]
+            )
+            st.altair_chart(pie)
+            
+            # Relations Matrix (Placeholder)
+            # if state.tribes: st.write(state.tribes)
+    
+    with c2:
+        st.subheader("📚 Knowledge & Skills")
+        
+        if hasattr(state, 'skills') and not state.skills.empty:
+            # Show top discovered skills
+            sdf = state.skills
+            skill_counts = sdf['skill'].value_counts()
+            
+            # Max level per skill
+            max_levels = sdf.groupby('skill')['level'].max()
+            
+            st.write("**Discovered Technologies:**")
+            for skill, count in skill_counts.items():
+                lvl = max_levels.get(skill, 0)
+                st.write(f"- **{skill}** (Learners: {count}, Max Mastery: {lvl:.2f})")
+                
+        else:
+            st.info("No skills discovered yet. Wait for an Einstein!")
 
 with tab_spirit:
     st.subheader("👻 The Spirit of the Tribe (AI)")

@@ -324,71 +324,163 @@ class BiologySystem(System):
                     # TOTAL
                     total_score = (0.4 * physical_score) + (0.3 * status_score) + (0.3 * chemistry)
                     
-                    # Update Best
+                if not interested_mask.any():
+                    return
+                    
+                women_indices = df[interested_mask].index
+                
+                # Prepare Men Pool (Candidate list)
+                # Optimization: Pre-fetch men data
+                eligible_men_ids = df[
+                    (df['gender'] == 'Male') &
+                    (df['age'] >= FERTILITY_MIN_AGE_M) &
+                    (df['age'] <= FERTILITY_MAX_AGE_M) &
+                    live_mask
+                ]['id'].values
+                
+                if len(eligible_men_ids) == 0: return
+
+                # Optimization: Pre-fetch men data for O(1) lookup
+                # This prevents O(N) scan inside the loop
+                men_data = df.loc[df['id'].isin(eligible_men_ids)].copy().set_index('id')
+                
+            # Optimization: Pre-calculate partner map for O(1) lookup
+            # Map woman_id -> partner_id (Spouse/Lover only)
+            # This avoids filtering dataframe inside the loop
+            rel_df = state.relationships
+            if not rel_df.empty:
+                 # Filter relevant types
+                 active_rels = rel_df[rel_df['type'].isin(['Spouse', 'Lover'])]
+                 # Create dictionary for fast lookups
+                 # Assuming one active partner for simplicity in lookup (take last)
+                 partner_map = active_rels.set_index('id_a')['id_b'].to_dict()
+            else:
+                 partner_map = {}
+
+            # Iterate interested women
+            # We can still loop, but make the inner logic O(1) mostly
+            valid_pregnancies = []
+            final_partners = []
+            new_relationships = [] # Batch new links
+            
+            # Policy Strictness
+            strictness = state.globals.get('policy_mating_strictness', 0.5)
+
+            for w_idx in women_indices:
+                woman = df.loc[w_idx]
+                w_id = woman['id']
+                
+                best_partner = None
+                best_partner_id = None
+                best_score = -1.0
+                
+                # 1. Existing Partner Check
+                existing_partner_id = partner_map.get(w_id)
+                
+                if existing_partner_id:
+                     # Check if partner is alive and reachable
+                     if existing_partner_id in men_data.index:
+                         # Loyalty Check (80%)
+                         if random.random() < 0.8:
+                             valid_pregnancies.append(w_idx)
+                             final_partners.append(existing_partner_id)
+                             continue # FAST PATH EXIT
+
+                # 2. Dating / Finding New (Slow Path)
+                # Only runs for singles or cheaters
+                
+                sample_size = min(3, len(eligible_men_ids))
+                candidates_ids = np.random.choice(eligible_men_ids, size=sample_size, replace=False)
+                
+                for m_id in candidates_ids:
+                    man = men_data.loc[m_id]
+                    
+                    # --- ATTRACTION ALGORITHM ---
+                    w_vul = woman.get('genetic_vulnerability', 0.1)
+                    m_vul = man.get('genetic_vulnerability', 0.1)
+                    vul_score = 1.0 - ((w_vul + m_vul) / 2.0)
+                    
+                    health_score = (man['hp'] / man['max_hp'])
+                    attr_stat = man.get('attractiveness', 0.5)
+                    w_skin = woman.get('skin_tone', 0.5)
+                    m_skin = man.get('skin_tone', 0.5)
+                    skin_sim = 1.0 - abs(w_skin - m_skin)
+                    
+                    physical_score = (0.2 * vul_score) + (0.3 * health_score) + (0.4 * attr_stat) + (0.1 * skin_sim)
+
+                    job_rank = {'Chief': 1.0, 'Healer': 0.8, 'Builder': 0.6, 'Hunter': 0.6, 'Gatherer': 0.4}
+                    status_score = job_rank.get(man['job'], 0.4)
+                    
+                    age_diff = abs(woman['age'] - man['age'])
+                    if age_diff > 15: status_score *= 0.7 
+                    
+                    chemistry = random.random()
+                    total_score = (0.4 * physical_score) + (0.3 * status_score) + (0.3 * chemistry)
+                    
                     if total_score > best_score:
                         best_score = total_score
                         best_partner = man
+                        best_partner_id = m_id
                 
-                if not best_partner is None:
-                    # Decision: Is he good enough?
-                    # Woman's standard derived from her own attractiveness + narcissism?
-                    # Base threshold 0.5
-                    # High Libido Lowers threshold
+                if best_partner is not None:
                     threshold = 0.6 - (woman.get('libido', 0.5) * 0.2) 
                     
+                    approved = False
                     if best_score > threshold:
-                        # --- APPROVAL PHASE ---
                         approved = True
-                        is_eloping = False
                         
-                        # Incest Check (Always Forbidden biologically)
+                        # Incest Check
                         w_mom = woman['mother_id']
                         w_dad = woman['father_id']
                         p_mom = best_partner['mother_id']
                         p_dad = best_partner['father_id']
                         
-                        # Siblings
                         if (w_mom is not None and w_mom == p_mom) or \
                            (w_dad is not None and w_dad == p_dad):
                             approved = False
                         
-                        # Parent-Child
-                        if w_mom == best_partner.name or w_dad == best_partner.name or \
-                           p_mom == woman['id'] or p_dad == woman['id']:
+                        if w_mom == best_partner_id or w_dad == best_partner_id or \
+                           p_mom == w_id or p_dad == w_id:
                             approved = False
-                            
-                        # Policy Check vs Rebellion
+
+                        # Policy Check
                         if approved:
-                            # Policy logic
                             policy_reject = False
+                            if strictness > 0.8 and best_partner.get('genetic_vulnerability', 0) > 0.4:
+                                 policy_reject = True
                             
-                            # Eugenics Check
-                            if strictness > 0.8:
-                                # Reject if genetic vul is high
-                                if best_partner.get('genetic_vulnerability', 0) > 0.4:
-                                    policy_reject = True
-                                    
-                            # Anti-Incest Check (Cousins etc - we don't track cousins deep enough yet, so assume name check ok)
-                            if strictness > 0.5:
-                                # Extra rigorous checking?
-                                pass
-                                
                             if policy_reject:
-                                # ELOPEMENT CHECK
-                                # If Attraction is VERY HIGH (>0.8) AND Libido > Strictness
                                 avg_libido = (woman.get('libido', 0.5) + best_partner.get('libido', 0.5)) / 2
                                 if best_score > 0.8 and avg_libido > strictness:
-                                    is_eloping = True
-                                    state.log(f"💘 SECRET ROMANCE! {woman['id']} eloped with {best_partner.name} defying tribal law!")
+                                    pass # Elopement
                                 else:
                                     approved = False
-                        
-                        if approved:
-                            valid_pregnancies.append(w_idx)
-                            final_partners.append(best_partner.name)
 
-            # Apply
+                    if approved:
+                        valid_pregnancies.append(w_idx)
+                        final_partners.append(best_partner_id)
+                        
+                        # Batch new relationship creation
+                        # Check exist via partner_map is not enough because map is old state
+                        # But for speed we assume new link if not in map
+                        if partner_map.get(w_id) != best_partner_id:
+                             new_relationships.append((w_id, best_partner_id))
+
+            # Apply Logic
             if valid_pregnancies:
                 df.loc[valid_pregnancies, 'is_pregnant'] = True
                 df.loc[valid_pregnancies, 'pregnancy_days'] = 0
-                df.loc[valid_pregnancies, 'partner_id'] = final_partners
+                if 'pregnancy_father_id' not in df.columns: df['pregnancy_father_id'] = None
+                df.loc[valid_pregnancies, 'pregnancy_father_id'] = final_partners
+            
+            # Batch Update Relationships
+            if new_relationships:
+                init_affection = 0.8
+                rows = []
+                for p1, p2 in new_relationships:
+                    # Double directional
+                    rows.append({'id_a': p1, 'id_b': p2, 'type': 'Lover', 'commitment': 0.1, 'affection': init_affection, 'start_day': state.day})
+                    rows.append({'id_a': p2, 'id_b': p1, 'type': 'Lover', 'commitment': 0.1, 'affection': init_affection, 'start_day': state.day})
+                
+                if rows:
+                    state.relationships = pd.concat([state.relationships, pd.DataFrame(rows)], ignore_index=True)

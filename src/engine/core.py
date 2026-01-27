@@ -18,10 +18,24 @@ class WorldState:
         self.population: pd.DataFrame = pd.DataFrame(columns=[
             "id", "family_id", "age", "gender", "job", 
             "hp", "max_hp", "stamina", 
-            "is_pregnant", "pregnancy_days", "partner_id",
+            "is_pregnant", "pregnancy_days", # partner_id REMOVED
             "traits", "params", "infected_diseases", "immunities",
             "cause_of_death", "is_alive"
         ])
+        
+        # Kinship Graph (Many-to-Many)
+        # Type: Spouse, Lover, Ex, Child, Parent
+        self.relationships: pd.DataFrame = pd.DataFrame(columns=[
+            "id_a", "id_b", "type", "commitment", "affection", "start_day"
+        ])
+        
+        # Knowledge Graph (Skills)
+        self.skills: pd.DataFrame = pd.DataFrame(columns=[
+            "agent_id", "skill", "level"
+        ])
+        
+        # Tribes Metadata
+        self.tribes: Dict[str, Any] = {}
         
         # Global Resources & Config
         self.globals: Dict[str, Any] = {
