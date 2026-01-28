@@ -119,6 +119,9 @@ class SocialSystem(System):
         state.opinions[(listener['id'], target_id)] = new_op
         
         # Log significant gossip
-        if abs(change) > 5.0:
-            # state.log(f"🗣️ {teller['id']} convinced {listener['id']} about {target_id}!")
-            pass
+        if abs(change) > 0.1:
+            dir_str = "📈" if change > 0 else "📉"
+            # Log for Listener (They changed their mind)
+            state.log(f"🗣️ Heard gossip from {teller['id'][-4:]} about {str(target_id)[-4:]}: Opinion {dir_str} ({change:+.1f})", agent_id=listener['id'], category='Social')
+            # Log for Teller (They talked)
+            state.log(f"🗣️ Shared gossip with {listener['id'][-4:]} about {str(target_id)[-4:]}", agent_id=teller['id'], category='Social')

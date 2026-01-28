@@ -115,7 +115,7 @@ with tabs[4]: render_genetics(living_df)
 with tabs[5]: render_psychology(living_df)
 with tabs[6]: render_social(state, living_df)
 with tabs[7]: render_civilization(state, living_df)
-with tabs[8]: render_inspector(living_df)
+with tabs[8]: render_inspector(living_df, state=state)
 
 # --- Auto Refresh Disabled ---
 # User requested manual refresh

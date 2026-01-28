@@ -143,42 +143,61 @@ class DiseaseSystem(System):
         if active_infections.empty: return
         
         active_disease_ids = active_infections['disease_id'].unique()
+        pop = state.population
+        has_coords = 'x' in pop.columns
         
         for d_id in active_disease_ids:
             disease = self.known_diseases[d_id]
-            infected_count = len(active_infections[active_infections['disease_id'] == d_id])
-            
-            # Transmission calc
-            prob = 1.0 - ((1.0 - disease.transmission) ** infected_count)
-            prob = min(0.5, prob)
-            
-            # Find susceptible
             infected_ids = active_infections[active_infections['disease_id'] == d_id]['person_id'].values
-            susceptible_df = state.population[
-                (~state.population['id'].isin(infected_ids)) & 
-                (state.population['is_alive'])
-            ]
             
-            if susceptible_df.empty: continue
-            
-            # Roll
-            rolls = np.random.random(len(susceptible_df))
-            new_infections_mask = rolls < prob
-            
-            new_victims = susceptible_df[new_infections_mask]['id'].values
-            
-            # Loop because we need immunity check per victim
-            # (Vectorizing immunity check across varying immunity levels is hard)
-            if len(new_victims) == 0:
-                continue
+            if not has_coords:
+                # --- LEGACY GLOBAL TRANSMISSION ---
+                infected_count = len(infected_ids)
+                prob = 1.0 - ((1.0 - disease.transmission) ** infected_count)
+                prob = min(0.5, prob)
                 
-            for vid in new_victims:
-                try:
-                    self._infect(state, vid, d_id)
-                except Exception as e:
-                    # Log but don't crash simulation
-                    print(f"⚠️ [DiseaseSystem] Warning: Could not infect agent {vid} - {e}")
-                    continue
+                susceptible_df = pop[(~pop['id'].isin(infected_ids)) & (pop['is_alive'])]
+                if susceptible_df.empty: continue
+                
+                rolls = np.random.random(len(susceptible_df))
+                new_victims = susceptible_df[rolls < prob]['id'].values
+                
+                for vid in new_victims:
+                    try: self._infect(state, vid, d_id)
+                    except: pass
+            else:
+                # --- SPATIAL TRANSMISSION ---
+                # "The Walking Dead" Model: Each infected breathes on neighbors
+                emitters = pop[pop['id'].isin(infected_ids)]
+                if emitters.empty: continue
+                
+                living_pop = pop[pop['is_alive']]
+                
+                # Iterate each spreader (Not optimally efficient for 10k agents, but fine for 500)
+                for _, spreader in emitters.iterrows():
+                    sx, sy = spreader['x'], spreader['y']
+                    
+                    # Vector distance to all living (Broadcast)
+                    dx = living_pop['x'] - sx
+                    dy = living_pop['y'] - sy
+                    dists_sq = dx*dx + dy*dy
+                    
+                    # Radius 10.0 (Squared = 100.0)
+                    # Filter: Nearby & Not Self & Not Already Infected (Optional optimization)
+                    nearby_mask = (dists_sq < 100.0) & (dists_sq > 0.1)
+                    
+                    neighbors = living_pop[nearby_mask]
+                    if neighbors.empty: continue
+                    
+                    # Transmission Roll
+                    # Each neighbor rolls against disease transmission chance
+                    rolls = np.random.random(len(neighbors))
+                    hits = neighbors[rolls < disease.transmission]['id'].values
+                    
+                    for vid in hits:
+                        # Attempt infection (Immunity checks inside _infect)
+                        try: self._infect(state, vid, d_id)
+                        except: pass
 
     def _handle_progression(self, state):
         if state.infections.empty: return

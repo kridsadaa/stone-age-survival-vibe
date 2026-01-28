@@ -32,6 +32,9 @@ class EconomySystem(System):
         
         # 3. Consumption Phase
         self._handle_consumption(state, living_df)
+        
+        # 4. Spatial Trade (New)
+        self._handle_p2p_trade(state, living_df)
 
     def _handle_crafting(self, state: 'WorldState', df: pd.DataFrame) -> None:
         # Recipes
@@ -392,6 +395,10 @@ class EconomySystem(System):
         # Policy-based Distribution Priority
         # Decentralized Logic: 
         # Assign 'priority_score' based on Tribe Policy, then sort globally.
+        # Policy-based Distribution Priority
+        # Decentralized Logic: 
+        # Assign 'priority_score' based on Tribe Policy, then sort globally.
+        living_df = living_df.copy() # Fix SettingWithCopyWarning
         living_df['priority_score'] = 0.0
         
         if hasattr(state, 'tribes'):
@@ -491,13 +498,16 @@ class EconomySystem(System):
                 state.population.at[idx, 'max_hp'] -= 0.5
                 is_malnourished = True
             if current_nuts['vitamins'] < 20: # Scurvy (Bleeding)
-                 state.population.at[idx, 'hp'] -= 1.0
-                 is_malnourished = True
-            if current_nuts['carbs'] < 20: # Hypoglycemia (No Energy)
-                 state.population.at[idx, 'stamina'] -= 10.0
-                 
-            if is_malnourished and random.random() < 0.01:
-                state.log(f"⚠️ Agent {agent_id} is suffering from malnutrition.")
+                state.population.at[idx, 'hp'] -= 0.5
+                is_malnourished = True
+            if current_nuts['carbs'] < 20: # Weakness
+                state.population.at[idx, 'stamina'] -= 10.0
+                is_malnourished = True
+                
+            if is_malnourished and random.random() < 0.05:
+                state.log(f"⚠️ Agent {agent_id} is suffering from malnutrition.", agent_id=agent_id, category='Health')
+
+
 
             # Apply stamina effects
             if consumed_calories >= needed:
@@ -539,3 +549,76 @@ class EconomySystem(System):
         # Starving:
         starving_indices = living_df[~fed_mask].index
         state.population.loc[starving_indices, 'stamina'] -= 10.0
+
+    def _handle_p2p_trade(self, state, df):
+        # 4. Spatial Trade (Barter/Gifting)
+        # Agents with surplus help neighbors in need (or trade for missing resources)
+        
+        if 'x' not in df.columns: return
+        
+        # Identify Needy (Food < 2.0 or missing tools)
+        inv = state.inventory
+        if inv.empty: return
+        
+        # Aggregate Food per agent
+        food_items = ['Meat', 'Fish', 'Fruit', 'Grain']
+        # Groupby is essential
+        agent_food = inv[inv['item'].isin(food_items)].groupby('agent_id')['amount'].sum()
+        
+        # Needy: < 2.0 food
+        needy_ids = agent_food[agent_food < 2.0].index.values
+        
+        if len(needy_ids) == 0: return
+        
+        needy_df = df[df['id'].isin(needy_ids)]
+        rich_df = df[~df['id'].isin(needy_ids)]
+        
+        if rich_df.empty: return
+        
+        # Sample limit
+        sample_needy = needy_df.sample(min(len(needy_df), 20))
+        
+        for _, beggar in sample_needy.iterrows():
+            bx, by = beggar['x'], beggar['y']
+            
+            # Find neighbors < 20.0
+            dx = rich_df['x'] - bx
+            dy = rich_df['y'] - by
+            dists_sq = dx*dx + dy*dy
+            
+            # Radius 20.0 (400 sq)
+            neighbor_mask = dists_sq < 400.0
+            potential_givers = rich_df[neighbor_mask]
+            
+            if potential_givers.empty: continue
+            
+            # Pick one
+            giver = potential_givers.sample(1).iloc[0]
+            giver_id = giver['id']
+            
+            # Execute Trade
+            g_inv_mask = (inv['agent_id'] == giver_id) & (inv['item'].isin(food_items))
+            if not g_inv_mask.any(): continue
+            
+            # Take one unit of whatever they have
+            g_indices = inv[g_inv_mask].index
+            item_idx = g_indices[0]
+            
+            item_name = inv.at[item_idx, 'item']
+            amount_to_give = 1.0
+            
+            # Deduct
+            inv.at[item_idx, 'amount'] -= amount_to_give
+            if inv.at[item_idx, 'amount'] <= 0:
+                inv.drop(item_idx, inplace=True)
+                
+            # Add to Beggar
+            new_item = {
+                "agent_id": beggar['id'], "item": item_name, "amount": amount_to_give, 
+                "durability": 0, "max_durability": 0, "spoilage_rate": 0.1 
+            }
+            state.inventory = pd.concat([state.inventory, pd.DataFrame([new_item])], ignore_index=True)
+            
+            state.log(f"🤝 Trade: {beggar['id'][-4:]} bought {item_name} from {giver['id'][-4:]} for Promise", category='Economy')
+
+

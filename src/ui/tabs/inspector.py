@@ -3,7 +3,7 @@ import pandas as pd
 import ast
 import math
 
-def render_inspector(living_df):
+def render_inspector(living_df, state=None):
     """
     Renders the Agent Inspector with Master-Detail view.
     Master: Filterable/Paginated Table.
@@ -11,8 +11,8 @@ def render_inspector(living_df):
     """
     st.header("🕵️ Agent Inspector (Master-Detail)")
     
-    if living_df.empty:
-        st.warning("No living population to inspect.")
+    if living_df.empty and (state is None or state.population.empty):
+        st.warning("No population to inspect.")
         return
 
     # --- MASTER VIEW (Browser) ---
@@ -22,12 +22,25 @@ def render_inspector(living_df):
     
     # --- DETAIL VIEW ---
     if selected_id:
-        # Fetch fresh data for the selected ID (in case it updated)
-        # Note: living_df is a snapshot passed in, so it's consistent for this render tick
-        row = living_df[living_df['id'] == selected_id]
-        if not row.empty:
-            _render_details(row.iloc[0], living_df)
+        # Fetch fresh data for the selected ID
+        agent_data = None
+        
+        # Priority 1: State Population (Includes recently deceased if frame preserved or if full history exists)
+        if state is not None and hasattr(state, 'population') and not state.population.empty:
+            matches = state.population[state.population['id'] == selected_id]
+            if not matches.empty:
+                agent_data = matches.iloc[0]
+                
+        # Priority 2: Living DF (Fallback)
+        if agent_data is None and not living_df.empty:
+             matches = living_df[living_df['id'] == selected_id]
+             if not matches.empty:
+                 agent_data = matches.iloc[0]
+        
+        if agent_data is not None:
+            _render_details(agent_data, living_df)
         else:
+            st.warning(f"⚠️ Agent {selected_id} is unavailable (Deceased/Exiled).")
             st.error(f"Agent {selected_id} not found (might have died).")
 
 def _render_browser(df):
@@ -95,28 +108,73 @@ def _render_browser(df):
     if 'hp' in view_df.columns: view_df['hp'] = view_df['hp'].round(1)
     if 'prestige' in view_df.columns: view_df['prestige'] = view_df['prestige'].round(1)
     
-    st.dataframe(view_df, use_container_width=True, hide_index=True)
-    
-    # Selector
-    # The user selects from the filtered list (all of it? or just the page?)
-    # "Manage from this table" -> ideally clicking row. 
-    # Since we can't guarantee 'on_select', we use a Selectbox populated by the Current Page (or filtered list)
-    
-    # Populating with filtered results makes it easy to find who you are looking for
+    # Define options for selection
     select_options = filtered['id'].tolist()
     
-    if not select_options:
-        return None
+    # Interactive Table with Selection
+    # Interactive Table with Selection
+    event = st.dataframe(
+        view_df, 
+        use_container_width=True, 
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="inspector_table_main"
+    )
+    
+    # Session State for Selection (Syncs Table & Dropdown)
+    if 'inspector_selected_id' not in st.session_state:
+        st.session_state.inspector_selected_id = select_options[0] if select_options else None
+    if 'last_table_selection' not in st.session_state:
+        st.session_state.last_table_selection = None
         
+    # Handle Table Click (Only if selection CHANGED)
+    if event:
+        new_selection = event.selection.rows
+        if new_selection != st.session_state.last_table_selection:
+            # User interacted with table
+            st.session_state.last_table_selection = new_selection
+            if new_selection:
+                try:
+                    row_idx = new_selection[0]
+                    if 0 <= row_idx < len(view_df):
+                        clicked_id = view_df.iloc[row_idx]['id']
+                        st.session_state.inspector_selected_id = clicked_id
+                except:
+                    pass
+            
+    # Popup / Dropdown (Synced)
+    def _update_from_dropdown():
+        st.session_state.inspector_selected_id = st.session_state.insp_dd_key
+        
+    current_val = st.session_state.inspector_selected_id
+    # Validate
+    if current_val not in select_options:
+        current_val = select_options[0] if select_options else None
+        
+    current_idx = 0
+    if current_val in select_options:
+        current_idx = select_options.index(current_val)
+
     # Helper to label the dropdown
     def _label(aid):
-        r = filtered[filtered['id'] == aid].iloc[0]
-        return f"{r['id']} ({r['role']}, {int(r['age'])}y)"
+        r = filtered[filtered['id'] == aid]
+        if not r.empty:
+            r = r.iloc[0]
+            return f"{r['id']} ({r['role']}, {int(r['age'])}y)"
+        return str(aid)
 
     st.markdown("👇 **Select Agent to Verify:**")
-    selected_id = st.selectbox("Select Agent", options=select_options, format_func=_label)
+    st.selectbox(
+        "Select Agent", 
+        options=select_options, 
+        index=current_idx,
+        format_func=_label,
+        key="insp_dd_key",
+        on_change=_update_from_dropdown
+    )
     
-    return selected_id
+    return st.session_state.inspector_selected_id
 
 def _render_details(agent, living_df):
     """Renders the detailed inspector view for one agent."""

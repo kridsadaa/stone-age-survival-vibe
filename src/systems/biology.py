@@ -136,7 +136,7 @@ class BiologySystem(System):
         if dead_hp_mask.any():
             df.loc[dead_hp_mask, 'is_alive'] = False
             df.loc[dead_hp_mask, 'cause_of_death'] = 'Health Failure'
-            state.log(f"☠️ {dead_hp_mask.sum()} villagers died of health failure.")
+            state.log(f"☠️   {dead_hp_mask.sum()} villagers died of health failure.")
 
         # B. Old Age
         # Chance starts at 80
@@ -543,6 +543,14 @@ class BiologySystem(System):
                 df.loc[valid_pregnancies, 'pregnancy_days'] = 0
                 if 'pregnancy_father_id' not in df.columns: df['pregnancy_father_id'] = None
                 df.loc[valid_pregnancies, 'pregnancy_father_id'] = final_partners
+                
+                # Log Conceptions
+                for vp_idx, pid in zip(valid_pregnancies, final_partners):
+                     wid = df.at[vp_idx, 'id']
+                     is_new = (wid, pid) in new_relationships
+                     bonus = "Love +80% (New)" if is_new else "Love Reinforced"
+                     state.log(f"💕 Conception: {wid[-4:]} & {pid[-4:]} are expecting! ({bonus})", agent_id=wid, category="Biology")
+                     state.log(f"💕 Conception: Partnering with {wid[-4:]} ({bonus})", agent_id=pid, category="Biology")
             
             # Batch Update Relationships
             if new_relationships:

@@ -21,7 +21,7 @@ def render_sidebar(engine):
             
         # Auto-Restart Config
         auto_restart = st.checkbox("♻️ Auto-Restart on Extinction", 
-                                   value=state.globals.get('auto_restart', False),
+                                   value=state.globals.get('auto_restart', True),
                                    help="Automatically start a new simulation if everyone dies.")
         state.globals['auto_restart'] = auto_restart
         

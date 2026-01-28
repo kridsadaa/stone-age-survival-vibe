@@ -1,1 +1,12 @@
-Crash at Day 1172:
+Crash at Day 1:
+Traceback (most recent call last):
+  File "C:\Users\kridsada-bun\Documents\codetest\lab-ml\stone-age-survival-vibe\src\engine\core.py", line 192, in _loop
+    self.tick()
+  File "C:\Users\kridsada-bun\Documents\codetest\lab-ml\stone-age-survival-vibe\src\engine\core.py", line 143, in tick
+    system.update(self.state)
+  File "C:\Users\kridsada-bun\Documents\codetest\lab-ml\stone-age-survival-vibe\src\systems\settlement.py", line 12, in update
+    self._handle_movement(state)
+  File "C:\Users\kridsada-bun\Documents\codetest\lab-ml\stone-age-survival-vibe\src\systems\settlement.py", line 165, in _handle_movement
+    safe_x = cx + (tx - cx) * 0.1 # Stronger pull
+                   ^^
+NameError: name 'tx' is not defined

@@ -76,6 +76,16 @@ class SettlementSystem(System):
         
         updates = {'id': [], 'x': [], 'y': []}
         
+        # --- Pre-calculate Maps for Love Drive ---
+        partner_map = {}
+        if hasattr(state, 'relationships') and not state.relationships.empty:
+             lovers = state.relationships[state.relationships['type'].isin(['Lover', 'Spouse', 'Partner'])]
+             for _, r in lovers.iterrows():
+                 partner_map[r['id_a']] = r['id_b']
+                 
+        # Fast Position Lookup
+        agent_positions = df.set_index('id')[['x', 'y']].to_dict('index')
+        
         for t_id, center in tribe_centers.items():
             # Get agents of this tribe
             mask = (df['is_alive']) & (df['tribe_id'] == t_id)
@@ -86,18 +96,41 @@ class SettlementSystem(System):
             current_x = df.loc[indices, 'x']
             current_y = df.loc[indices, 'y']
             
-            # Target
-            tx, ty = center['x'], center['y']
+            # Target (Base = Tribe Center)
+            base_tx, base_ty = center['x'], center['y']
             
-            # Move 5% towards center + Noise
-            stats_speed = 1.0 # Could rely on agility trait
+            # --- Love Drive Calculation ---
+            # Generate personalized targets
+            # We prefer vector operations, but dictionary lookup requires iteration or map
+            # Optimizing: Only override for those with partners
             
+            row_ids = df.loc[indices, 'id'].values
+            
+            # Initialize with Tribe Center
+            arr_tx = np.full(len(indices), base_tx)
+            arr_ty = np.full(len(indices), base_ty)
+            arr_force = np.full(len(indices), 0.02) # Default Tribe Gravity
+            
+            # Apply Love/Desire Overrides
+            # This loop runs once per agent per tick (Optimization: Only if total pop < 1000)
+            has_desire = False
+            for i, aid in enumerate(row_ids):
+                # 1. Love (Find Partner)
+                pid = partner_map.get(aid)
+                if pid and pid in agent_positions:
+                    p_pos = agent_positions[pid]
+                    arr_tx[i] = p_pos['x']
+                    arr_ty[i] = p_pos['y']
+                    arr_force[i] = 0.05 # Stronger Attraction
+                    has_desire = True
+            
+            # Movement Calculation
             noise_x = np.random.normal(0, 1.0, size=len(indices))
             noise_y = np.random.normal(0, 1.0, size=len(indices))
             
-            # Calculate proposed new position
-            proposed_x = current_x + (tx - current_x) * 0.02 + noise_x
-            proposed_y = current_y + (ty - current_y) * 0.02 + noise_y
+            # Vectorized update
+            proposed_x = current_x + (arr_tx - current_x) * arr_force + noise_x
+            proposed_y = current_y + (arr_ty - current_y) * arr_force + noise_y
             
             # Clip
             proposed_x = proposed_x.clip(0, 100)
@@ -129,8 +162,8 @@ class SettlementSystem(System):
                     if current_terrain == 'Water':
                         # EMERGENCY: Stuck in water! Push hard towards tribe center
                         # Increase step size towards target
-                        safe_x = cx + (tx - cx) * 0.1 # Stronger pull
-                        safe_y = cy + (ty - cy) * 0.1
+                        safe_x = cx + (base_tx - cx) * 0.1 # Stronger pull
+                        safe_y = cy + (base_ty - cy) * 0.1
                         df.at[idx, 'x'] = safe_x
                         df.at[idx, 'y'] = safe_y
                     else:

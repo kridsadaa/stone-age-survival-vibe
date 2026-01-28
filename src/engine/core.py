@@ -87,14 +87,16 @@ class WorldState:
         if len(self.logs) > 2000:
             self.logs.pop(0)
             
+        # Chronicle (Text only)
+        self.chronicle.insert(0, f"Day {self.day}: {message}")
+        if len(self.chronicle) > 1000:
+            self.chronicle.pop()
+            
         print(f"[Day {self.day}] {message}") # Console echo
             
     def get_logs_for_agent(self, agent_id: str) -> List[Dict]:
-        """Returns logs specific to an agent."""
-        return [l for l in self.logs if l.get('agent_id') == agent_id]
-        self.chronicle.insert(0, f"Day {self.day}: {message}")
-        if len(self.chronicle) > 1000: # Keep log manageable
-            self.chronicle.pop()
+        """Returns logs specific to an agent (by ID match or text mention)."""
+        return [l for l in self.logs if l.get('agent_id') == agent_id or (agent_id and agent_id in l.get('message', ''))]
 
     @property
     def current_season(self):
@@ -164,7 +166,7 @@ class SimulationEngine:
 
     def reset(self):
         """Resets the simulation state to Day 0."""
-        self.log("♻️ Auto-Restarting Simulation...")
+        self.state.log("♻️ Auto-Restarting Simulation...")
         # Persist Settings
         restart_pref = self.state.globals.get('auto_restart', True)
         
@@ -177,7 +179,7 @@ class SimulationEngine:
         self.state.population = generate_initial_state(500, traits)
         
         # Note: Systems will see new state on next tick via self.state logic
-        self.log("🌍 World Regenerated!")
+        self.state.log("🌍 World Regenerated!")
 
     def _loop(self):
         while self.running:
@@ -194,7 +196,7 @@ class SimulationEngine:
                     # Check if population is critical (< 10)
                     alive_count = self.state.population['is_alive'].sum()
                     if alive_count < 10:
-                        self.log(f"⚠️ Population Critical ({alive_count} < 10). Auto-Restarting...")
+                        self.state.log(f"⚠️ Population Critical ({alive_count} < 10). Auto-Restarting...")
                         self.reset()
                         time.sleep(1.0) # Pause to let systems catch up
                         continue
