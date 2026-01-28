@@ -1,0 +1,31 @@
+=== Stone Age Survival World Report ===
+ID: 20260128_162732
+Reset Cause: Extinction (Pop < 10)
+Duration: 814 Days
+
+--- Population Statistics ---
+Final Living Population: 9
+Total Agents Existed: 10
+Total Deaths: 1
+
+--- Causes of Death ---
+  - Health Failure: 1
+
+--- Tribal Governance ---
+[Red_Tribe]
+  Leader: HMN-63ec3537
+  Population: 2
+  Policies: {'mating_strictness': 0.9, 'rationing_strictness': 0.1, 'ratioing_label': 'Communal', 'mating_label': 'Strict', 'rationing_label': 'Communal'}
+
+[Blue_Tribe]
+  Leader: HMN-824822a6
+  Population: 4
+  Policies: {'mating_strictness': 0.0, 'rationing_strictness': 0.10000000000000003, 'ratioing_label': 'Communal', 'mating_label': 'Open', 'rationing_label': 'Communal'}
+
+[Green_Tribe]
+  Leader: HMN-54f72d2e
+  Population: 3
+  Policies: {'mating_strictness': 0.30000000000000004, 'rationing_strictness': 0.0, 'ratioing_label': 'Communal', 'mating_label': 'Open', 'rationing_label': 'Communal'}
+
+
+--- End of Report ---
