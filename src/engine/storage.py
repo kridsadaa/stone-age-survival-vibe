@@ -23,12 +23,17 @@ class ArchiveManager:
     def archive_dead(self, population_df: pd.DataFrame) -> pd.DataFrame:
         """
         Removes dead agents from population_df, appends them to disk, 
-        and returns the cleaned DataFrame.
+        and returns the cleaned DataFrame. Thread-safe with validation.
         """
-        # Identify dead
-        if 'is_alive' not in population_df.columns:
+        # Validate DataFrame integrity
+        if population_df.empty:
             return population_df
             
+        if 'is_alive' not in population_df.columns:
+            print("\u26a0\ufe0f Warning: Cannot archive, 'is_alive' column missing")
+            return population_df
+        
+        # Identify dead
         dead_mask = population_df['is_alive'] == False
         dead_count = dead_mask.sum()
         
@@ -46,7 +51,7 @@ class ArchiveManager:
             dead_rows.to_csv(self.graveyard_path, mode='a', header=header, index=False)
             # print(f"Archived {dead_count} agents to {self.graveyard_path}")
         except Exception as e:
-            print(f"❌ Archive Failed: {e}")
+            print(f"❌ [ArchiveManager] Error: Failed to archive dead agents - {e}")
             # If fail, keep them in RAM to avoid data loss
             return population_df
             

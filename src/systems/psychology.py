@@ -101,12 +101,27 @@ class PsychologySystem(System):
         if len(rebels) > 0:
             # Crime: Theft (Eat extra food, ignore rationing)
             # Logic: If resource > 0, they take 5 units
+            # Logic: If resource > 0, they take 5 units
             steal_amt = len(rebels) * 5.0
-            if state.globals['resources'] > steal_amt:
-                state.globals['resources'] -= steal_amt
-                df.loc[rebels.index, 'stamina'] += 10 # Thieves get full
-                df.loc[rebels.index, 'criminal_history'] += 1
-                state.log(f"⚠️ {len(rebels)} rebels stole food!")
+            
+            # Realism Phase 5 Compat
+            res = state.globals['resources']
+            
+            # Theft targets FOOD primarily
+            if isinstance(res, dict):
+                current_food = res.get('food', 0)
+                if current_food > steal_amt:
+                     state.globals['resources']['food'] -= steal_amt
+                     df.loc[rebels.index, 'stamina'] += 10
+                     df.loc[rebels.index, 'criminal_history'] += 1
+                     state.log(f"⚠️ {len(rebels)} rebels stole food!", category="Crime")
+            else:
+                # Legacy Float
+                if res > steal_amt:
+                    state.globals['resources'] -= steal_amt
+                    df.loc[rebels.index, 'stamina'] += 10
+                    df.loc[rebels.index, 'criminal_history'] += 1
+                    state.log(f"⚠️ {len(rebels)} rebels stole food!", category="Crime")
                 
             # Punish (Exile)
             # If AI Punishment Slider (Need to add this too? For now Check Ratio)

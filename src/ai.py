@@ -16,7 +16,11 @@ class QAgent:
         # 3: ScoutPatrol (Small Group - High Risk)
         # 4: ScoutExpedition (Large Group - Safe)
         # 5: NoScout (Safety)
-        self.actions = [0, 1, 2, 3, 4, 5]
+        # 6: Policy: Strict Mating
+        # 7: Policy: Open Mating
+        # 8: Policy: Communal Rationing
+        # 9: Policy: Merit Rationing
+        self.actions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
         
         self.last_state = None
         self.last_action = None

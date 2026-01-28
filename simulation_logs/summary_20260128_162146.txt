@@ -1,0 +1,15 @@
+=== Stone Age Survival World Report ===
+ID: 20260128_162146
+Reset Cause: Extinction (Pop < 10)
+Duration: 1081 Days
+
+--- Population Statistics ---
+Final Living Population: 9
+Total Agents Existed: 10
+Total Deaths: 1
+
+--- Causes of Death ---
+  - Health Failure: 1
+
+AI Module Not Active or Not Connected.
+--- End of Report ---

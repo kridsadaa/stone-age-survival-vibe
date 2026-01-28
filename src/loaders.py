@@ -23,7 +23,7 @@ def load_traits(filepath: str) -> pd.DataFrame:
     """Loads trait data from a CSV file with validation."""
     # Check file existence
     if not os.path.exists(filepath):
-        print(f"⚠️ Warning: Trait file not found at {filepath}, using defaults")
+        print(f"⚠️ [Loaders] Warning: Traits file not found at {filepath}, using defaults")
         return pd.DataFrame()  # Return empty DF
     
     try:
@@ -37,7 +37,7 @@ def load_traits(filepath: str) -> pd.DataFrame:
         
         # Validate data
         if df.empty:
-            print(f"⚠️ Warning: Trait file is empty at {filepath}")
+            print(f"⚠️ [Loaders] Warning: Trait file is empty at {filepath}")
             return pd.DataFrame()
         
         # Parse survival_bonus column safely
@@ -47,16 +47,16 @@ def load_traits(filepath: str) -> pd.DataFrame:
                 lambda x: ast.literal_eval(x) if isinstance(x, str) else {}
             )
         except (ValueError, SyntaxError) as e:
-            print(f"⚠️ Warning: Failed to parse survival_bonus, using empty dict. Error: {e}")
+            print(f"⚠️ [Loaders] Warning: Failed to parse survival_bonus, using empty dict - {e}")
             df['survival_bonus'] = {}
         
         return df
         
     except pd.errors.EmptyDataError:
-        print(f"❌ Error: Trait CSV is empty at {filepath}")
+        print(f"❌ [Loaders] Error: Trait CSV is empty at {filepath}")
         return pd.DataFrame()
     except Exception as e:
-        print(f"❌ Error loading traits CSV from {filepath}: {type(e).__name__}: {e}")
+        print(f"❌ [Loaders] Error: Failed to parse traits CSV - {e}")
         return pd.DataFrame()
 
 def generate_initial_state(count: int, traits_df: pd.DataFrame) -> pd.DataFrame:
@@ -79,14 +79,24 @@ def generate_initial_state(count: int, traits_df: pd.DataFrame) -> pd.DataFrame:
         "age": ages,
         "gender": genders,
         "job": "Gatherer",
+        "role": "Gatherer", # Default role
         "hp": 100.0,
         "max_hp": 100.0,
         "stamina": 100.0,
+        "prestige": 0.0,
+        "injuries": "[]", # Default empty list (stringified for DF safety or simple string)
+        "nutrients": "{'protein': 100, 'carbs': 100, 'vitamins': 100}", # Serialized dict
         "is_alive": True,
         "is_pregnant": False, 
         "pregnancy_days": 0,
-        # partner_id Removed
         "family_id": [f"FAM-{str(uuid.uuid4())[:8]}" for _ in range(count)], 
+        
+        # Family Tree (Realism Phase 6)
+        # Store strings/lists directly to avoid DataFrame recursion issues
+        "parents": "[]", # Serialized list of IDs
+        "children": "[]", # Serialized list of IDs
+        "partner_id": None, # Current primary partner
+        
         "cause_of_death": None,
         # Ocean Traits (0.0 - 1.0)
         "trait_openness": np.random.random(count),

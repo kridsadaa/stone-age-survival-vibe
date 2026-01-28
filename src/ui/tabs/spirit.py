@@ -48,6 +48,12 @@ def render_spirit(state, living_df, engine):
         if culture_sys.last_state:
             st.write(f"**Observed State:** {culture_sys.last_state}")
             st.write(f"**Last Reward:** {culture_sys._calculate_reward(state):.2f}")
+            
+        # Reset Button (User Requested)
+        if st.button("🤯 Reset AI Brain"):
+            culture_sys.reset_brain()
+            st.success("AI Memory Wiped! Starting fresh reinforcement learning...")
+            st.rerun()
         
         # Q-Table Visualization
         if culture_sys.q_table:

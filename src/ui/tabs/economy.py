@@ -5,8 +5,17 @@ import pandas as pd
 def render_economy(state, living_df):
     st.subheader("💰 Advanced Economy (Inventory & Resources)")
     
-    # Global Resources (Legacy)
-    st.metric("Global Stockpile (Legacy)", f"{state.globals.get('resources', 0):.0f}", delta="Communal Food")
+    # Global Resources (Realism Phase 5 - Dictionary)
+    res = state.globals.get('resources', {})
+    if isinstance(res, dict):
+        # New Phase 5 Format
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Wood Stockpile", f"{res.get('wood', 0):.0f}")
+        c2.metric("Stone Stockpile", f"{res.get('stone', 0):.0f}")
+        c3.metric("Food Stockpile", f"{res.get('food', 0):.0f}")
+    else:
+        # Legacy
+        st.metric("Global Stockpile (Legacy)", f"{res:.0f}", delta="Communal Food")
     
     st.markdown("---")
     

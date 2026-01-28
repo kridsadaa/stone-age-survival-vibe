@@ -141,12 +141,30 @@ class World:
         # 2: Heal Focus + No Scout
         # 3: Balance + Patrol (Small Risk)
         # 4: Balance + Expedition (Large Safe)
-        # 5: Eco + Patrol (Risk) -> Complexity.
-        # Let's Simplify: 
-        # 0,1,2 = Standard Jobs + NO SCOUT
-        # 3 = Balance Job + Patrol
-        # 4 = Balance Job + Expedition
-        # 5 = Stop Scouting (Same as 1? No, let's make 5 explicit 'Safe Mode')
+        # 5: Stop Scouting (Safe Mode)
+        # 6: Policy: Strict Mating
+        # 7: Policy: Open Mating
+        # 8: Policy: Communal Rationing
+        # 9: Policy: Merit Rationing
+
+        # Process Policy Actions (Stateful)
+        if action == 6:
+            if self.engine.state.globals.get('policy_mating') != "Strict":
+                self.engine.state.globals['policy_mating'] = "Strict"
+                self.log("📜 Chief enforces Strict Mating Policy (Reproduction Focus).")
+        elif action == 7:
+             if self.engine.state.globals.get('policy_mating') != "Open":
+                self.engine.state.globals['policy_mating'] = "Open"
+                self.log("📜 Chief enforces Open Mating Policy (Happiness Focus).")
+        elif action == 8:
+             if self.engine.state.globals.get('policy_rationing') != "Communal":
+                self.engine.state.globals['policy_rationing'] = "Communal"
+                self.log("📜 Chief enforces Communal Rationing.")
+        elif action == 9:
+             if self.engine.state.globals.get('policy_rationing') != "Meritocracy":
+                self.engine.state.globals['policy_rationing'] = "Meritocracy"
+                self.log("📜 Chief enforces Meritocracy Rationing (Work First).")
+
         
         # Actually, let's decouple? No, Q-Table assumes discrete actions.
         # Let's say:

@@ -80,7 +80,7 @@ class DiseaseSystem(System):
             self._infect(state, victim_id, disease.id)
         except (ValueError, IndexError) as e:
             # Edge case: living became empty during selection
-            print(f"⚠️ Warning: Could not select patient zero: {e}")
+            print(f"⚠️ [DiseaseSystem] Warning: Could not select patient zero - {e}")
             return
 
     def _infect(self, state, person_id, disease_id):
@@ -143,42 +143,61 @@ class DiseaseSystem(System):
         if active_infections.empty: return
         
         active_disease_ids = active_infections['disease_id'].unique()
+        pop = state.population
+        has_coords = 'x' in pop.columns
         
         for d_id in active_disease_ids:
             disease = self.known_diseases[d_id]
-            infected_count = len(active_infections[active_infections['disease_id'] == d_id])
-            
-            # Transmission calc
-            prob = 1.0 - ((1.0 - disease.transmission) ** infected_count)
-            prob = min(0.5, prob)
-            
-            # Find susceptible
             infected_ids = active_infections[active_infections['disease_id'] == d_id]['person_id'].values
-            susceptible_df = state.population[
-                (~state.population['id'].isin(infected_ids)) & 
-                (state.population['is_alive'])
-            ]
             
-            if susceptible_df.empty: continue
-            
-            # Roll
-            rolls = np.random.random(len(susceptible_df))
-            new_infections_mask = rolls < prob
-            
-            new_victims = susceptible_df[new_infections_mask]['id'].values
-            
-            # Loop because we need immunity check per victim
-            # (Vectorizing immunity check across varying immunity levels is hard)
-            if len(new_victims) == 0:
-                continue
+            if not has_coords:
+                # --- LEGACY GLOBAL TRANSMISSION ---
+                infected_count = len(infected_ids)
+                prob = 1.0 - ((1.0 - disease.transmission) ** infected_count)
+                prob = min(0.5, prob)
                 
-            for vid in new_victims:
-                try:
-                    self._infect(state, vid, d_id)
-                except Exception as e:
-                    # Log but don't crash simulation
-                    print(f"⚠️ Warning: Failed to infect agent {vid}: {e}")
-                    continue
+                susceptible_df = pop[(~pop['id'].isin(infected_ids)) & (pop['is_alive'])]
+                if susceptible_df.empty: continue
+                
+                rolls = np.random.random(len(susceptible_df))
+                new_victims = susceptible_df[rolls < prob]['id'].values
+                
+                for vid in new_victims:
+                    try: self._infect(state, vid, d_id)
+                    except: pass
+            else:
+                # --- SPATIAL TRANSMISSION ---
+                # "The Walking Dead" Model: Each infected breathes on neighbors
+                emitters = pop[pop['id'].isin(infected_ids)]
+                if emitters.empty: continue
+                
+                living_pop = pop[pop['is_alive']]
+                
+                # Iterate each spreader (Not optimally efficient for 10k agents, but fine for 500)
+                for _, spreader in emitters.iterrows():
+                    sx, sy = spreader['x'], spreader['y']
+                    
+                    # Vector distance to all living (Broadcast)
+                    dx = living_pop['x'] - sx
+                    dy = living_pop['y'] - sy
+                    dists_sq = dx*dx + dy*dy
+                    
+                    # Radius 10.0 (Squared = 100.0)
+                    # Filter: Nearby & Not Self & Not Already Infected (Optional optimization)
+                    nearby_mask = (dists_sq < 100.0) & (dists_sq > 0.1)
+                    
+                    neighbors = living_pop[nearby_mask]
+                    if neighbors.empty: continue
+                    
+                    # Transmission Roll
+                    # Each neighbor rolls against disease transmission chance
+                    rolls = np.random.random(len(neighbors))
+                    hits = neighbors[rolls < disease.transmission]['id'].values
+                    
+                    for vid in hits:
+                        # Attempt infection (Immunity checks inside _infect)
+                        try: self._infect(state, vid, d_id)
+                        except: pass
 
     def _handle_progression(self, state):
         if state.infections.empty: return
@@ -245,24 +264,20 @@ class DiseaseSystem(System):
                     ids_to_remove.extend(rec_rows.index.tolist())
 
         # Apply State Changes
+        # CRITICAL FIX: Process dormant updates FIRST (no index shift), then removals
+        if ids_to_dormant:
+            # Safe Update via index intersection
+            dormant_indices = state.infections.index.intersection(ids_to_dormant)
+            if len(dormant_indices) > 0:
+                state.infections.loc[dormant_indices, 'active'] = False
+                state.infections.loc[dormant_indices, 'days_infected'] = 0
+        
         if ids_to_remove:
-            # Safe Drop
+            # Safe Drop - do this AFTER dormant updates
             existing_remove = state.infections.index.intersection(ids_to_remove)
             if not existing_remove.empty:
                 state.infections.drop(existing_remove, inplace=True)
                 state.infections.reset_index(drop=True, inplace=True)
-            
-        if ids_to_dormant:
-            # Safe Update
-            # Reset index messed up IDs if we dropped? 
-            # Actually if we drop 'ids_to_remove', then 'ids_to_dormant' indices might shift if they were higher?
-            # Yes, drop resets index if we do reset_index.
-            # CRITICAL BUG: Mixing drop and atomic updates on indices.
-            # Fix: Process state changes via ID lookup or boolean masks, not integer indices.
-            pass 
-            
-            # Alternative: Just set active=False for dormant first, THEN drop remove.
-            # IDS are indices here.
             
             # 1. Handle Dormant (No index shift yet)
             existing_dormant = state.infections.index.intersection(ids_to_dormant)

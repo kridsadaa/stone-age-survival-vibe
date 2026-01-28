@@ -29,7 +29,16 @@ class TechSystem(System):
         # B. Surplus Resources (Economy)
         # Base: 1000. Surplus is anything above (Pop * 5)
         needed = len(living) * 5
-        surplus = max(0, state.globals['resources'] - needed)
+        
+        # Realism Phase 5 Compat: 'resources' is now a dict {'wood', 'stone', 'food'}
+        res = state.globals['resources']
+        total_res = 0
+        if isinstance(res, dict):
+            total_res = res.get('food', 0) + res.get('wood', 0) + res.get('stone', 0)
+        else:
+            total_res = res
+            
+        surplus = max(0, total_res - needed)
         econ_score = surplus * 0.1
         
         # C. Intelligence (Innovation Potential)
