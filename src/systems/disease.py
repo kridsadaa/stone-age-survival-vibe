@@ -80,7 +80,7 @@ class DiseaseSystem(System):
             self._infect(state, victim_id, disease.id)
         except (ValueError, IndexError) as e:
             # Edge case: living became empty during selection
-            print(f"⚠️ Warning: Could not select patient zero: {e}")
+            print(f"⚠️ [DiseaseSystem] Warning: Could not select patient zero - {e}")
             return
 
     def _infect(self, state, person_id, disease_id):
@@ -177,7 +177,7 @@ class DiseaseSystem(System):
                     self._infect(state, vid, d_id)
                 except Exception as e:
                     # Log but don't crash simulation
-                    print(f"⚠️ Warning: Failed to infect agent {vid}: {e}")
+                    print(f"⚠️ [DiseaseSystem] Warning: Could not infect agent {vid} - {e}")
                     continue
 
     def _handle_progression(self, state):
@@ -245,24 +245,20 @@ class DiseaseSystem(System):
                     ids_to_remove.extend(rec_rows.index.tolist())
 
         # Apply State Changes
+        # CRITICAL FIX: Process dormant updates FIRST (no index shift), then removals
+        if ids_to_dormant:
+            # Safe Update via index intersection
+            dormant_indices = state.infections.index.intersection(ids_to_dormant)
+            if len(dormant_indices) > 0:
+                state.infections.loc[dormant_indices, 'active'] = False
+                state.infections.loc[dormant_indices, 'days_infected'] = 0
+        
         if ids_to_remove:
-            # Safe Drop
+            # Safe Drop - do this AFTER dormant updates
             existing_remove = state.infections.index.intersection(ids_to_remove)
             if not existing_remove.empty:
                 state.infections.drop(existing_remove, inplace=True)
                 state.infections.reset_index(drop=True, inplace=True)
-            
-        if ids_to_dormant:
-            # Safe Update
-            # Reset index messed up IDs if we dropped? 
-            # Actually if we drop 'ids_to_remove', then 'ids_to_dormant' indices might shift if they were higher?
-            # Yes, drop resets index if we do reset_index.
-            # CRITICAL BUG: Mixing drop and atomic updates on indices.
-            # Fix: Process state changes via ID lookup or boolean masks, not integer indices.
-            pass 
-            
-            # Alternative: Just set active=False for dormant first, THEN drop remove.
-            # IDS are indices here.
             
             # 1. Handle Dormant (No index shift yet)
             existing_dormant = state.infections.index.intersection(ids_to_dormant)

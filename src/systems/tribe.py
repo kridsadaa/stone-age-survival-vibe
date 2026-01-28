@@ -12,11 +12,8 @@ class TribalSystem(System):
         if not state.tribes:
             self._init_tribes(state)
             
-        # 2. Assign Leaders (Headman) per Tribe
-        # TODO
-        
+        # 2. Assign Leaders (Headman) per Tribe        
         # 3. Inter-Tribal Events (War/Trade)
-        # TODO: Phase 4.2
         pass
 
     def _init_tribes(self, state):

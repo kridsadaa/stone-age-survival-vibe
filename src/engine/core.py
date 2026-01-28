@@ -95,43 +95,47 @@ class SimulationEngine:
         self.simulation_speed = 1.0 # Multiplier
         self.archiver = ArchiveManager()
         
-    def add_system(self, system: System):
+        # Thread safety: RLock allows same thread to acquire multiple times
+        self._state_lock = threading.RLock()
+        
+    def add_system(self, system: System) -> None:
         self.systems.append(system)
         
-    def tick(self, force=False):
-        """Execute one simulation step"""
-        if self.paused and not force:
-            return
+    def tick(self, force: bool = False) -> None:
+        """Execute one simulation step (thread-safe)"""
+        with self._state_lock:
+            if self.paused and not force:
+                return
 
-        self.state.day += 1
-        
-        # Update Globals (Season)
-        self.state.globals["season"] = self.state.current_season
-        
-        # Run Systems
-        for system in self.systems:
-            system.update(self.state)
+            self.state.day += 1
             
-        # Optimization: Archive Dead
-        if self.state.day % 30 == 0:
-            self.state.population = self.archiver.archive_dead(self.state.population)
+            # Update Globals (Season)
+            self.state.globals["season"] = self.state.current_season
             
-    def start(self):
+            # Run Systems
+            for system in self.systems:
+                system.update(self.state)
+                
+            # Optimization: Archive Dead
+            if self.state.day % 30 == 0:
+                self.state.population = self.archiver.archive_dead(self.state.population)
+            
+    def start(self) -> None:
         """Start background processing"""
         if self.running: return
         self.running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
         
-    def stop(self):
+    def stop(self) -> None:
         self.running = False
         if self._thread:
             self._thread.join(timeout=1.0)
             
-    def toggle_pause(self):
+    def toggle_pause(self) -> None:
         self.paused = not self.paused
 
-    def set_speed(self, speed: float):
+    def set_speed(self, speed: float) -> None:
         self.simulation_speed = speed
 
     def _loop(self):

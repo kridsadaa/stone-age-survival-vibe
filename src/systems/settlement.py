@@ -42,15 +42,15 @@ class SettlementSystem(System):
         # Vectorize for speed.
         
         # Map tribe_center to each row
-        # tribe_centers dict: {'Red_Tribe': {'x': 20, 'y': 20}, ...}
+        # Performance optimization: Use different strategies based on population size
+        population_size = len(df[df['is_alive']])
         
-        # Create separate series for target x/y
-        # This is strictly manual loop for clarity in complex logic, optimal enough for 500 agents
+        if population_size > 1000:
+            # Fully vectorized approach for large populations
+            self._vectorized_movement(df, tribe_centers)
+            return
         
-        # Actually, let's try a hybrid approach
-        # Extract x, y, tribe_id vectors
-        
-        # TODO: Optimization - If pop > 1000, use numpy exclusively
+        # Hybrid approach for smaller populations (< 1000)
         
         updates = {'id': [], 'x': [], 'y': []}
         

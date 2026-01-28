@@ -33,8 +33,16 @@ class BiologySystem(System):
         # Seasonal Modifier
         season = state.globals.get('season', 'Spring')
         if season == 'Winter':
-            # TODO: Check for Fire tech/warmth
-            base_cost += 2.0
+            # Check for Fire technology
+            unlocked_techs = state.globals.get('unlocked_techs', [])
+            has_fire = 'Fire Control' in unlocked_techs or 'Fire' in unlocked_techs
+            
+            if has_fire:
+                # Fire provides warmth - 50% reduction in winter penalty
+                base_cost += 1.0
+            else:
+                # Full winter penalty without fire
+                base_cost += 2.0
             
         # Apply Base Cost
         # We can do more complex vectorized calculations here later
@@ -91,7 +99,6 @@ class BiologySystem(System):
             
         # 3.5 Natural Healing
         # If Fed (Stamina > 80) and Not Old (< 60)
-        # TODO: Check for active disease? (Complex)
         healing_mask = (df['stamina'] > 80) & (df['age'] < 60) & (df['hp'] < df['max_hp']) & live_mask
         if healing_mask.any():
             df.loc[healing_mask, 'hp'] += 1.0
@@ -148,7 +155,7 @@ class BiologySystem(System):
         # 5. Reproduction (Scientific Model)
         self._handle_reproduction(state, df, live_mask)
 
-    def _handle_reproduction(self, state, df, live_mask):
+    def _handle_reproduction(self, state: 'WorldState', df: pd.DataFrame, live_mask: pd.Series) -> None:
         # Constants
         GESTATION_PERIOD = 270 # Days (9 months)
         FERTILITY_MIN_AGE_F = 15

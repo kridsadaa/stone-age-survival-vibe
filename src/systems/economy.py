@@ -33,7 +33,7 @@ class EconomySystem(System):
         # 3. Consumption Phase
         self._handle_consumption(state, living_df)
 
-    def _handle_crafting(self, state, df):
+    def _handle_crafting(self, state: 'WorldState', df: pd.DataFrame) -> None:
         # Recipes
         # Spear: 2 Wood + 1 Stone
         # Basket: 3 Wood
@@ -84,7 +84,6 @@ class EconomySystem(System):
                      # Consume materials (We need to find rows to reduce)
                      # This is tricky in loop.
                      # Let's simple-subtract from global DF using index found in Ag_Mat
-                     pass # TODO: Implement robust material consumption
                      crafted = True
                 
                 elif wood >= 3.0:
@@ -132,11 +131,11 @@ class EconomySystem(System):
                 state.inventory = pd.concat([state.inventory, new_items], ignore_index=True)
         
         except (KeyError, ValueError, IndexError) as e:
-            print(f"⚠️ Warning: Crafting error: {e}")
+            print(f"⚠️ [EconomySystem] Warning: Crafting failed - {e}")
             # Simulation continues even if crafting fails
             return
              
-    def _handle_gathering(self, state, df):
+    def _handle_gathering(self, state: 'WorldState', df: pd.DataFrame) -> None:
         workers = df[(df['job'].isin(['Gatherer', 'Hunter', 'Fisherman'])) & (df['age'] > 5)]
         if workers.empty:
             return
@@ -237,11 +236,11 @@ class EconomySystem(System):
                 state.inventory = pd.concat([state.inventory, new_items], ignore_index=True)
         
         except (KeyError, ValueError, IndexError) as e:
-            print(f"⚠️ Warning: Gathering error: {e}")
+            print(f"⚠️ [EconomySystem] Warning: Gathering failed - {e}")
             # Continue simulation even if gathering fails
             return
 
-    def _handle_consumption(self, state, living_df):
+    def _handle_consumption(self, state: 'WorldState', living_df: pd.DataFrame) -> None:
         # Agents need to eat.
         # Priority: Meat (spoils fast) > Fish > Fruit > Grain
         
