@@ -197,6 +197,14 @@ class SimulationEngine:
                     alive_count = self.state.population['is_alive'].sum()
                     if alive_count < 10:
                         self.state.log(f"⚠️ Population Critical ({alive_count} < 10). Auto-Restarting...")
+                        
+                        # Save Report before wiping state
+                        try:
+                            from src.engine.reporter import save_simulation_report
+                            save_simulation_report(self.state, getattr(self.state, 'ai', None), cause="Extinction (Pop < 10)")
+                        except Exception as e:
+                            print(f"Report Failed: {e}")
+
                         self.reset()
                         time.sleep(1.0) # Pause to let systems catch up
                         continue

@@ -52,6 +52,14 @@ def render_sidebar(engine):
         st.metric("TPS Limit", engine.tps_limit)
         
         if st.button("Reset Simulation"):
+            from src.engine.reporter import save_simulation_report
+            # Try to find AI
+            ai_ref = getattr(engine, 'ai', None)
+            if not ai_ref and hasattr(engine, 'state') and hasattr(engine.state, 'ai'):
+                 ai_ref = engine.state.ai
+            
+            save_simulation_report(engine.state, ai_ref, cause="Manual User Reset")
+
             engine.stop()
             del st.session_state.engine
             st.rerun()
