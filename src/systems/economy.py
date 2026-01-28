@@ -290,19 +290,51 @@ class EconomySystem(System):
         # Let's go row-by-row for FOOD ITEMS only?
         # 500 agents * ~3 items = 1500 rows. Fast enough.
         
-        pass # TODO: Full consumption logic is complex. Implementing basic decay is handled by inv system.
-        # For now, let's assume if they have food in inventory, they eat it automatically 
-        # via the InventorySystem's 'cleanup' or 'spoilage' which removes it.
-        # Wait, spoilage removes it regardless. Eating provides ENERGY.
+        # Complete food consumption logic
+        # Food items and priority
+        food_items = ['Meat', 'Fish', 'Fruit', 'Grain']
+        food_priority = {'Meat': 3.0, 'Fish': 2.5, 'Fruit': 1.5, 'Grain': 1.0}
         
-        # Temporary: Sum total food per agent, add Stamina.
-        total_food = food_inv.groupby('agent_id')['amount'].sum()
-        
-        # Update Stamina
-        # Map total_food to agents
-        # agents with food > 2 get stamina
-        
-        fed_agents = total_food[total_food > 2.0].index
+        # Process living agents
+        for idx, agent in living_df.iterrows():
+            agent_id = agent['id']
+            needed = 2.0
+            
+            # Get agent's food sorted by spoilage
+            agent_food = inv[
+                (inv['agent_id'] == agent_id) & 
+                (inv['item'].isin(food_items))
+            ].sort_values(by='spoilage_rate', ascending=False)
+            
+            if agent_food.empty:
+                state.population.at[idx, 'stamina'] -= 15.0
+                continue
+            
+            consumed_calories = 0.0
+            for food_idx, food_row in agent_food.iterrows():
+                if consumed_calories >= needed: break
+                
+                item = food_row['item']
+                avail = food_row['amount']
+                val = food_priority.get(item, 1.0)
+                
+                eat_amt = min(avail, (needed - consumed_calories) / val)
+                if eat_amt > 0:
+                    state.inventory.at[food_idx, 'amount'] -= eat_amt
+                    consumed_calories += eat_amt * val
+            
+            # Apply stamina effects
+            if consumed_calories >= needed:
+                state.population.at[idx, 'stamina'] += 10.0
+            elif consumed_calories >= needed * 0.5:
+                state.population.at[idx, 'stamina'] += 2.0
+            else:
+                state.population.at[idx, 'stamina'] -= (needed - consumed_calories) * 5.0
+
+        # Cleanup zero amounts
+        state.inventory = state.inventory[state.inventory['amount'] > 0.01].copy()
+        state.inventory.reset_index(drop=True, inplace=True)
+        return
         
         # Update alive agents stamina
         # Using index map

@@ -147,3 +147,36 @@ class SettlementSystem(System):
             if t_id in state.tribes:
                 state.tribes[t_id]['centroid'] = (row['x'], row['y'])
                 state.tribes[t_id]['pop'] = len(living[living['tribe_id'] == t_id])
+
+    def _vectorized_movement(self, df, tribe_centers):
+        """Fully vectorized movement for large populations (1000+ agents)"""
+        import numpy as np
+        alive_mask = df['is_alive']
+        
+        # Create target position arrays
+        target_x = df['tribe_id'].map(lambda tid: tribe_centers.get(tid, {}).get('x', 50.0))
+        target_y = df['tribe_id'].map(lambda tid: tribe_centers.get(tid, {}).get('y', 50.0))
+        
+        # Generate noise arrays
+        noise_x = np.random.normal(0, 1.0, size=len(df))
+        noise_y = np.random.normal(0, 1.0, size=len(df))
+        
+        # Vectorized position updates (only for alive agents)
+        new_x = df['x'].copy()
+        new_y = df['y'].copy()
+        
+        new_x[alive_mask] = df.loc[alive_mask, 'x'] + \
+                             (target_x[alive_mask] - df.loc[alive_mask, 'x']) * 0.02 + \
+                             noise_x[alive_mask]
+        
+        new_y[alive_mask] = df.loc[alive_mask, 'y'] + \
+                             (target_y[alive_mask] - df.loc[alive_mask, 'y']) * 0.02 + \
+                             noise_y[alive_mask]
+        
+        # Clip to bounds
+        new_x = np.clip(new_x, 0, 100)
+        new_y = np.clip(new_y, 0, 100)
+        
+        # Update positions
+        df.loc[alive_mask, 'x'] = new_x[alive_mask]
+        df.loc[alive_mask, 'y'] = new_y[alive_mask]
