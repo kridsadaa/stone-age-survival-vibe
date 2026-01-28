@@ -1,58 +1,74 @@
-# Stone Age Survival Simulation 🗿
+# Stone Age Survival Vibe 2.0 🗿🏹
 
-A dynamic agent-based simulation where a Stone Age tribe struggles to survive against hunger, disease, and the elements. Built with Python and Streamlit.
+An advanced **Agent-Based Simulation** of a Neolithic society, where agents live, love, gossip, trade, and try to survive in a dynamic ecosystem. Built with **Python (Pandas)** and **Streamlit**.
 
-## Features
+## 🌟 Key Features
 
-- **Agent-Based Modeling**: Each "Human" agent has unique genetics, physical attributes (HP, Stamina), and personality traits.
-- **Dynamic Disease System**: Diseases spread through the population based on transmission rates, symptoms, and incubation periods.
-- **Resource Management**: The tribe must gather enough food to survive. Scarcity leads to starvation, affecting the weakest first.
-- **Data-Driven Architecture**:
-    - `data/diseases.json`: easy-to-edit disease definitions.
-    - `data/traits.csv`: defining genetic traits and survival bonuses.
-- **Interactive Dashboard**:
-    - Real-time village status (Population, Infected, Resources).
-    - Event Chronicle (Births, Deaths, Outbreaks).
-    - Data Export (CSV).
+### 🏛️ Tribal Society
+The world is no longer a single group. Agents belong to distinct tribes, each with its own culture and politics:
+- **Red Tribe 🔴**: Aggressive warriors.
+- **Blue Tribe 🔵**: Peaceful diplomats.
+- **Green Tribe 🟢**: Neutral naturists.
+- **Politics**: Tribes elect **Chiefs** based on Prestige. Chiefs set policies (e.g., *Strict Mating* vs *Open Love*, *Communal Rationing* vs *Meritocracy*).
 
-## Logic Overview
+### 💕 Complex Social Dynamics
+Agents are not just resource consumers; they have feelings:
+- **Romance System**: Agents have a "Love Drive" prompting them to seek partners.
+- **Gossip Network**: Agents share opinions (Positive/Negative) about others, influencing global Reputation.
+- **Family Trees**: Tracking lineage, parents, and children.
 
-The simulation runs in "Days". Each day (`tick()`):
-1.  **Gathering**: Agents contribute to the community food store based on their traits (e.g., "Sharp Eyes").
-2.  **Consumption**: Agents eat. If food is insufficient, they take damage.
-3.  **Disease Spread**:
-    - Random "Spontaneous Outbreaks" based on population density.
-    - Infected agents spread disease to contacts based on transmission rates.
-4.  **Life Cycle**: Agents age, take damage from diseases/starvation, and can die.
+### 📊 Advanced Simulation Engine
+- **Vectorized Logic**: Powered by `pandas` for handling populations of 500+ agents efficiently.
+- **Economics**: Agents gather resources, craft tools (Spears, Baskets), and **Trade** surpluses with neighbors.
+- **Desire-Driven Movement**: Agents move with purpose—towards food when hungry, towards lovers when lonely.
 
-## Installation
+### 🛠️ Tools & Analytics
+- **Inspector Tab**: Click on any agent to see their full profile: Attributes, Relationships, History Log, and Family Tree.
+- **Auto-Reporter**: Automatically saves a detailed text summary (`simulation_logs/`) every time the world restarts (Extinction) or is manually reset.
+- **Data Export**: Download current world state as CSV.
 
-1.  Clone the repository.
-2.  Install dependencies:
+---
+
+## 🚀 Installation & Run
+
+1.  **Clone the Repository**
+2.  **Install Dependencies**:
     ```bash
-    pip install streamlit pandas
+    pip install streamlit pandas numpy
     ```
-3.  Run the application:
+3.  **Run the App**:
     ```bash
     streamlit run app.py
     ```
-
-## File Structure
-
-- `app.py`: Main Streamlit dashboard application.
-- `src/`:
-    - `models.py`: Defines the `Human` agent class.
-    - `simulation.py`: The `World` engine logic.
-    - `loaders.py`: Helper functions for loading data.
-- `data/`:
-    - `diseases.json`: Database of diseases.
-    - `traits.csv`: Database of agent traits.
-
-## Future Plans
-
-- Add "Events" system (e.g., Volcanic Eruption, Drought).
-- More complex reproduction and inheritance logic.
-- Clan politics and social interactions.
+4.  **Explore**: Use the Tabs to view different aspects of the simulation (Governance, Social, Health, etc.).
 
 ---
-*Created by Antigravity*
+
+## 📂 Project Structure
+
+- **`app.py`**: Main entry point and UI layout.
+- **`src/`**:
+    - **`engine/`**: Core Simulation Loop & World State (`core.py`, `reporter.py`).
+    - **`systems/`**: Logic modules for each aspect of life:
+        - `tribe.py`: Tribal politics & Chiefs.
+        - `social.py`: Gossip & Reputation.
+        - `biology.py`: Health, Pregnancy, Genetics.
+        - `settlement.py`: Movement & Migration.
+        - `economy.py`: Gathering, Crafting, Trade.
+    - **`ui/`**: Streamlit renderers (`inspector.py`, `sidebar.py`, etc.).
+- **`data/`**:
+    - `traits.csv`: Genetic traits definitions.
+    - `diseases.json`: Disease configuration.
+- **`simulation_logs/`**: Auto-generated simulation summaries.
+
+---
+
+## 📝 Configuration
+
+You can tweak the simulation via the **Sidebar**:
+- **Simulation Speed**: Adjust ticks per second.
+- **Time Warp**: Skip ahead 10-100 days.
+- **Auto-Restart**: Automatically reboot the world if population drops below 10.
+
+---
+*Developed by Antigravity*

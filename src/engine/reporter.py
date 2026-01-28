@@ -28,16 +28,31 @@ def save_simulation_report(state, ai=None, cause="Manual Reset"):
     if not dead_df.empty and 'cause_of_death' in dead_df.columns:
         death_counts.update(dead_df['cause_of_death'].dropna())
         
-    # AI Stats
-    ai_summary = "AI Module Not Active or Not Connected."
+    # Tribe Stats
+    tribe_summary = "--- Tribal Governance ---\n"
+    if hasattr(state, 'tribes') and state.tribes:
+        for tid, tdata in state.tribes.items():
+            leader_id = tdata.get('chief_id', 'None')
+            if 'tribe_id' in state.population.columns:
+                 pop_count = len(state.population[(state.population['tribe_id'] == tid) & (state.population['is_alive'])])
+            else:
+                 pop_count = "?"
+            policies = tdata.get('policies', {})
+            
+            tribe_summary += f"[{tid}]\n"
+            tribe_summary += f"  Leader: {leader_id}\n"
+            tribe_summary += f"  Population: {pop_count}\n"
+            tribe_summary += f"  Policies: {policies}\n"
+            tribe_summary += "\n"
+    else:
+        tribe_summary += "No tribal structures defined.\n"
+
+    # AI Stats (Legacy Support)
+    ai_summary = ""
     if ai:
-        ai_summary = f"""
-    --- AI Brain (Q-Learning) ---
+        ai_summary = f"""--- AI Brain (Q-Learning) ---
     Epsilon (Exploration): {ai.epsilon:.2f}
-    Alpha (Learning Rate): {ai.alpha:.2f}
-    Gamma (Discount): {ai.gamma:.2f}
-    
-    Knowledge Base (Q-Table Size): {len(ai.q_table)} States
+    Knowledge Base: {len(ai.q_table)} States
     Last Action: {ai.last_action}
         """
         
@@ -66,6 +81,7 @@ def save_simulation_report(state, ai=None, cause="Manual Reset"):
                     f.write(f"  - {c}: {count}\n")
             f.write("\n")
             
+            f.write(tribe_summary)
             f.write(ai_summary)
             f.write("\n")
             f.write(f"--- End of Report ---\n")
