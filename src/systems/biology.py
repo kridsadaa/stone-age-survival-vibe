@@ -110,6 +110,26 @@ class BiologySystem(System):
             max_hp = df.loc[healing_mask, 'max_hp']
             df.loc[healing_mask, 'hp'] = np.minimum(current_hp, max_hp)
             
+        # 3.8 Injury Recovery (Realism Phase 3)
+        # 5% chance to recover from injury if resting (Stamina > 50)
+        # Note: Injuries are stored as string "['Broken Leg']" or empty "[]"
+        # Parsing string list is slow, so we'll do simple string check
+        injured_mask = (df['injuries'] != "[]") & live_mask
+        if injured_mask.any():
+            # Chance to recover
+            recovering = (np.random.random(len(df)) < 0.05) & injured_mask & (df['stamina'] > 50)
+            if recovering.any():
+                # For now simply clear all injuries
+                df.loc[recovering, 'injuries'] = "[]"
+                # state.log("🩹 Some agents recovered from injuries")
+                
+            # Apply Injury Effects (Health Drain)
+            # Anyone still injured loses small HP
+            still_injured = injured_mask & ~recovering
+            if still_injured.any():
+                df.loc[still_injured, 'hp'] -= 0.2
+                df.loc[still_injured, 'stamina'] -= 1.0
+            
         # 4. Death Logic
         # A. Health Failure
         dead_hp_mask = (df['hp'] <= 0) & live_mask
@@ -184,32 +204,37 @@ class BiologySystem(System):
                 new_ids = [f"HMN-{str(uuid.uuid4())[:8]}" for _ in range(num_births)]
                 new_genders = np.random.choice(['Male', 'Female'], size=num_births)
                 
-                # Inheritance Logic (Simple average of traits + mutation)
-                # For now random, later match with partner_id
-                
                 new_babies = pd.DataFrame({
                     "id": new_ids,
                     "age": np.zeros(num_births),
                     "gender": new_genders,
                     "job": "Child",
-                    "hp": 100.0, "max_hp": 30.0, # Babies are fragile
+                    "role": "Child",
+                    "hp": 30.0, 
+                    "max_hp": 30.0,
                     "stamina": 50.0,
+                    "prestige": 0.0,
                     "is_alive": True,
                     "is_pregnant": False, "pregnancy_days": 0,
                     "partner_id": None,
                     "mother_id": mothers['id'].values,
-                    "father_id": mothers['partner_id'].values if 'partner_id' in mothers.columns else None, # Needs partner tracking fix
-                    "family_id": mothers['family_id'].values, # Inherit family
+                    "family_id": mothers['family_id'].values, 
                     "cause_of_death": None,
-                    # Random Traits
-                    "trait_openness": np.random.random(num_births),
-                    "trait_conscientiousness": np.random.random(num_births),
-                    "trait_extraversion": np.random.random(num_births),
-                    "trait_agreeableness": np.random.random(num_births),
-                    "trait_neuroticism": np.random.random(num_births),
-                    # Phenotype Inheritance
-                    # Ideally average of Mom + Dad. For now, Mom + Mutation
-                    "skin_tone": np.clip(mothers['skin_tone'].values + np.random.normal(0, 0.1, num_births), 0.0, 1.0),
+                    # Realism Phase 6
+                    "parents": [str([mid]) for mid in mothers['id'].values],
+                    "children": "[]",
+                    "injuries": "[]",
+                    "nutrients": "{'protein': 100, 'carbs': 100, 'vitamins': 100}",
+                    # Inherited Traits (Mutation)
+                    "trait_openness": np.clip(mothers['trait_openness'].values + np.random.normal(0, 0.1, num_births), 0.0, 1.0),
+                    "trait_conscientiousness": np.clip(mothers['trait_conscientiousness'].values + np.random.normal(0, 0.1, num_births), 0.0, 1.0),
+                    "trait_extraversion": np.clip(mothers['trait_extraversion'].values + np.random.normal(0, 0.1, num_births), 0.0, 1.0),
+                    "trait_agreeableness": np.clip(mothers['trait_agreeableness'].values + np.random.normal(0, 0.1, num_births), 0.0, 1.0),
+                    "trait_neuroticism": np.clip(mothers['trait_neuroticism'].values + np.random.normal(0, 0.1, num_births), 0.0, 1.0),
+                    # Location
+                    "x": mothers['x'].values,
+                    "y": mothers['y'].values,
+                    "tribe_id": mothers['tribe_id'].values
                 })
                 
                 # Append to Population
@@ -218,8 +243,7 @@ class BiologySystem(System):
 
         # B. Conception Logic
         # Population Cap Check (Soft)
-        if len(df[live_mask]) > 2000: return
-        
+        if len(df[live_mask]) > 2000: return        # Policy Check: Handled per-tribe below
         # Find Eligible Women
         # Not pregnant, Age 15-45, Healthy (Stamina > 50) as proxy for Ovulation health
         eligible_women = (
@@ -230,6 +254,24 @@ class BiologySystem(System):
             (df['stamina'] > 50) &
             live_mask
         )
+        
+        # Apply Policy Modifiers to Libido (Interest Chance)
+        # Open Policy -> Higher interest
+        # Strict Policy -> Lower interest (controlled)
+        libido_mod = pd.Series(1.0, index=df.index)
+        if hasattr(state, 'tribes'):
+             for tid, tdata in state.tribes.items():
+                 # Default Strict if missing
+                 pol = tdata.get('policies', {}).get('mating_label', 'Strict')
+                 t_mask = df['tribe_id'] == tid
+                 if pol == 'Open':
+                     libido_mod[t_mask] = 2.0 # Double interest
+                 else:
+                     libido_mod[t_mask] = 0.8 # Slightly less random mating
+        
+        # Update DF temporary (or just use in calculation)
+        # We can't update DF directly if we don't want to persist.
+        # Just use in calculation.
         
         # Find Eligible Men
         eligible_men_count = (
@@ -249,7 +291,7 @@ class BiologySystem(System):
             # Roll < 0.01 * Libido
             # High Libido (0.9) = 0.9% daily chance. Low (0.1) = 0.1% chance.
             interest_rolls = np.random.random(len(df))
-            interest_threshold = df['libido'] * 0.02 # approx 2% max daily chance for hyper-sexual agents
+            interest_threshold = df['libido'] * 0.02 * libido_mod # Policy multiplier
             
             interested_mask = eligible_women & (interest_rolls < interest_threshold)
             
@@ -281,10 +323,27 @@ class BiologySystem(System):
             for w_idx in women_indices:
                 woman = df.loc[w_idx]
                 
+                # 0. Spatial Check (Love in the vicinity)
+                # Only consider men within range (e.g. 20 units)
+                nearby_men_ids = eligible_men_ids
+                
+                if 'x' in df.columns and 'y' in df.columns:
+                    wx, wy = woman['x'], woman['y']
+                    # Calculate vector distance to all eligible men
+                    # men_data is indexed by ID
+                    mx = men_data['x']
+                    my = men_data['y']
+                    dists = np.sqrt((mx - wx)**2 + (my - wy)**2)
+                    
+                    # Filter
+                    nearby_men_ids = dists[dists < 20.0].index.values
+                    
+                if len(nearby_men_ids) == 0: continue
+
                 # 1. Pick Candidates (Sample 3 men to evaluate)
                 # "The Dating Scene"
-                sample_size = min(3, len(eligible_men_ids))
-                candidates_ids = np.random.choice(eligible_men_ids, size=sample_size, replace=False)
+                sample_size = min(3, len(nearby_men_ids))
+                candidates_ids = np.random.choice(nearby_men_ids, size=sample_size, replace=False)
                 
                 best_partner = None
                 best_score = -1.0

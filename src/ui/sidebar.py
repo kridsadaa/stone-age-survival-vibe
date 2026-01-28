@@ -2,6 +2,7 @@ import streamlit as st
 import time
 
 def render_sidebar(engine):
+    state = engine.state
     with st.sidebar:
         st.header("🎮 Controls")
         
@@ -15,6 +16,15 @@ def render_sidebar(engine):
             engine.toggle_pause()
             st.rerun()
             
+        if st.button("🔄 Refresh Data"):
+            st.rerun()
+            
+        # Auto-Restart Config
+        auto_restart = st.checkbox("♻️ Auto-Restart on Extinction", 
+                                   value=state.globals.get('auto_restart', False),
+                                   help="Automatically start a new simulation if everyone dies.")
+        state.globals['auto_restart'] = auto_restart
+        
         st.markdown("---")
         st.header("⏩ Time Warp")
         skip_days = st.number_input("Days to Skip", min_value=1, max_value=3650, value=30, step=10)
@@ -56,6 +66,41 @@ def render_sidebar(engine):
             st.warning("⏸️ Simulation Paused")
         else:
             st.success("▶️ Simulation Running")
+    
+        st.markdown("---")
+        st.header("👑 Tribal Council")
+        
+        # Display Chiefs Logic
+        try:
+             # Check for Tribes Data
+             if hasattr(state, 'tribes') and state.tribes:
+                 for tid, tdata in state.tribes.items():
+                     c_id = tdata.get('chief_id')
+                     c_name = "Unknown"
+                     c_emoji = "🗿"
+                     
+                     # Try to find agent details
+                     if c_id:
+                         # Slow lookup but okay for sidebar (few chiefs)
+                         c_agent = state.population[state.population['id'] == c_id]
+                         if not c_agent.empty:
+                             row = c_agent.iloc[0]
+                             c_name = f"{row['role']} {row['id'][-4:]}"
+                             if row['gender'] == 'Female': c_emoji = "👸"
+                             else: c_emoji = "🤴"
+                     
+                     st.write(f"{c_emoji} **{tdata.get('name', tid)}**: {c_name}")
+             else:
+                 # Fallback: Find anyone with 'Chief' job
+                 chiefs = state.population[state.population['job'] == 'Chief']
+                 if not chiefs.empty:
+                     for _, c in chiefs.iterrows():
+                         st.write(f"👑 Chief {c['id'][-4:]}")
+                 else:
+                     st.caption("No central authority.")
+        except Exception as e:
+             st.caption("Council gathering...")
+
     
         st.markdown("---")
         st.header("🌍 World Gen")

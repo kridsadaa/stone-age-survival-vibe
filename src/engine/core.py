@@ -4,6 +4,7 @@ import time
 import threading
 from .systems import System
 from .storage import ArchiveManager
+from src.loaders import load_traits, generate_initial_state
 
 class WorldState:
     """
@@ -16,11 +17,13 @@ class WorldState:
         # Core Data: Population as Vectorized DataFrame
         # Columns: id, age, gender, job, hp, stamina, is_alive, etc.
         self.population: pd.DataFrame = pd.DataFrame(columns=[
-            "id", "family_id", "age", "gender", "job", 
-            "hp", "max_hp", "stamina", 
-            "is_pregnant", "pregnancy_days", # partner_id REMOVED
+            "id", "family_id", "age", "gender", "job", "role", # Added role
+            "hp", "max_hp", "stamina", "prestige", # Added prestige
+            "is_pregnant", "pregnancy_days", 
             "traits", "params", "infected_diseases", "immunities",
-            "cause_of_death", "is_alive"
+            "cause_of_death", "is_alive",
+            "injuries", "nutrients", # Pre-add Phase 3 columns to save time
+            "parents", "children", "partner_id" # Phase 6 Family Tree
         ])
         
         # Kinship Graph (Many-to-Many)
@@ -47,18 +50,19 @@ class WorldState:
         
         # Global Resources & Config
         self.globals: Dict[str, Any] = {
-            "resources": 1000.0,
+            "resources": {"wood": 0, "stone": 0, "food": 0},
+            "policies": {},
+            "policy_mating": "Strict", # Strict, Open
+            "policy_rationing": "Communal", # Communal, Meritocracy, ChildFirst
             "season": "Spring",
-            "inventory": {"Wood": 0, "Stone": 0},
-            "idea_points": 0.0,
-            "era": "Stone Age",
-            # Climate Globals
-            "latitude": 45.0, # Degrees (0-90)
-            "elevation": 100.0, # Meters
-            "temperature": 15.0, # Celsius
-            "biome": "Temperate Forest",
-            "is_night": False
+            "year": 1,
+            "weather": "Sunny"
         }
+        
+        # Structured Logs (Realism Phase 6)
+        # Structured Logs (Realism Phase 6)
+        # Format: {'tick': int, 'message': str, 'agent_id': str | None, 'category': str}
+        self.logs: List[Dict] = []
         
         # Sub-modules (Keep these as Objects for now, or migate later)
         self.map = None 
@@ -67,7 +71,27 @@ class WorldState:
         # Logs
         self.chronicle: List[str] = []
 
-    def log(self, message: str):
+    def log(self, message: str, agent_id: str = None, category: str = "General"):
+        """
+        Logs an event with metadata for UI filtering.
+        """
+        entry = {
+            "tick": self.day,
+            "message": message,
+            "agent_id": agent_id,
+            "category": category
+        }
+        self.logs.append(entry)
+        
+        # Keep log size manageable (Last 2000 entries)
+        if len(self.logs) > 2000:
+            self.logs.pop(0)
+            
+        print(f"[Day {self.day}] {message}") # Console echo
+            
+    def get_logs_for_agent(self, agent_id: str) -> List[Dict]:
+        """Returns logs specific to an agent."""
+        return [l for l in self.logs if l.get('agent_id') == agent_id]
         self.chronicle.insert(0, f"Day {self.day}: {message}")
         if len(self.chronicle) > 1000: # Keep log manageable
             self.chronicle.pop()
@@ -138,6 +162,23 @@ class SimulationEngine:
     def set_speed(self, speed: float) -> None:
         self.simulation_speed = speed
 
+    def reset(self):
+        """Resets the simulation state to Day 0."""
+        self.log("♻️ Auto-Restarting Simulation...")
+        # Persist Settings
+        restart_pref = self.state.globals.get('auto_restart', True)
+        
+        # New State
+        self.state = WorldState()
+        self.state.globals['auto_restart'] = restart_pref
+        
+        # Reload Data
+        traits = load_traits('data/traits.csv')
+        self.state.population = generate_initial_state(500, traits)
+        
+        # Note: Systems will see new state on next tick via self.state logic
+        self.log("🌍 World Regenerated!")
+
     def _loop(self):
         while self.running:
             if self.paused:
@@ -147,6 +188,17 @@ class SimulationEngine:
             start_t = time.time()
             try:
                 self.tick()
+                
+                # Check Auto-Restart
+                if self.state.globals.get('auto_restart', True):
+                    # Check if population is critical (< 10)
+                    alive_count = self.state.population['is_alive'].sum()
+                    if alive_count < 10:
+                        self.log(f"⚠️ Population Critical ({alive_count} < 10). Auto-Restarting...")
+                        self.reset()
+                        time.sleep(1.0) # Pause to let systems catch up
+                        continue
+                        
             except Exception as e:
                 print(f"❌ SIMULATION CRASHED: {e}")
                 import traceback

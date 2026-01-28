@@ -17,7 +17,56 @@ class MapSystem(System):
             state.log("🌍 Regenerating Map (Schema Update)...")
             self._generate_map(state)
             
-        # Optional: Dynamic map updates (seasons affecting water/ice?)
+        # Dynamic Map Updates & Regeneration
+        # 1. Weather System (Realism Phase 5)
+        current_weather = state.globals.get('weather', 'Sunny')
+        
+        # Weather Transition Logic (Markov Chain-ish)
+        # Sunny: 80% stay, 20% Rain
+        # Rain: 60% stay, 20% Sunny, 20% Storm
+        # Storm: 50% stay, 50% Rain
+        
+        roll = random.random()
+        new_weather = current_weather
+        
+        if current_weather == 'Sunny':
+            if roll < 0.2: new_weather = 'Rain'
+        elif current_weather == 'Rain':
+            if roll < 0.2: new_weather = 'Sunny'
+            elif roll > 0.8: new_weather = 'Storm'
+        elif current_weather == 'Storm':
+            if roll < 0.5: new_weather = 'Rain'
+            
+        if new_weather != current_weather:
+            state.globals['weather'] = new_weather
+            icon = {'Sunny': '☀️', 'Rain': '🌧️', 'Storm': '⛈️'}[new_weather]
+            state.log(f"{icon} Weather changed to {new_weather}!")
+            
+        # 2. Get Season
+        season = state.globals.get('season', 'Spring')
+        regen_rate = 0.05 # 5% per tick base
+        
+        # Weather effects on Regrow
+        if new_weather == 'Rain': regen_rate *= 1.5
+        elif new_weather == 'Storm': regen_rate *= 1.2
+        elif season == 'Winter': regen_rate = 0.0
+
+            
+        # 2. Regenerate Resources (Vectorized)
+        if hasattr(state, 'map_data') and state.map_data is not None:
+            df = state.map_data
+            
+            # Wood Regrows (Forests)
+            df['res_wood'] += df['max_wood'] * regen_rate * 0.01
+            df['res_wood'] = df[['res_wood', 'max_wood']].min(axis=1)
+            
+            # Food Regrows (Plants/Fish)
+            df['res_food'] += df['max_food'] * regen_rate * 0.05
+            df['res_food'] = df[['res_food', 'max_food']].min(axis=1)
+            
+            # Stone does NOT regrow (Finite resource?) Or extremely slow geological process?
+            # Let's say no regrowth for stone to force exploration.
+
 
     def _generate_map(self, state):
         rows = []
@@ -75,10 +124,30 @@ class MapSystem(System):
                 end_x = start_x + scale
                 end_y = start_y + scale
                 
+                # Initialize Dynamic Resources (Max Capacity)
+                res_wood = 0.0
+                res_stone = 0.0
+                res_food = 0.0
+                
+                if terrain == 'Forest':
+                    res_wood = random.uniform(500.0, 1000.0)
+                    res_food = random.uniform(200.0, 400.0)
+                    res_stone = random.uniform(50.0, 100.0)
+                elif terrain == 'Mountain':
+                    res_wood = random.uniform(0.0, 50.0)
+                    res_food = random.uniform(0.0, 50.0)
+                    res_stone = random.uniform(800.0, 1500.0)
+                elif terrain == 'Plains':
+                    res_wood = random.uniform(10.0, 50.0)
+                    res_food = random.uniform(100.0, 300.0)
+                    res_stone = random.uniform(10.0, 30.0)
+                elif terrain == 'Water':
+                    res_food = random.uniform(500.0, 1000.0) # Fish
+                
                 rows.append({
                     'grid_x': x,
                     'grid_y': y,
-                    'real_x': real_x, # Center for point reference if needed 
+                    'real_x': real_x, 
                     'real_y': real_y,
                     'x': start_x, 
                     'y': start_y,
@@ -86,7 +155,15 @@ class MapSystem(System):
                     'y2': end_y,
                     'terrain': terrain,
                     'color': color,
-                    'resource_bonus': 1.0
+                    'resource_bonus': 1.0,
+                    # Current Resources
+                    'res_wood': res_wood,
+                    'res_stone': res_stone,
+                    'res_food': res_food,
+                    # Max Capacity (for regeneration)
+                    'max_wood': res_wood,
+                    'max_stone': res_stone,
+                    'max_food': res_food
                 })
                 
         state.map_data = pd.DataFrame(rows)

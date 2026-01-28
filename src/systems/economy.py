@@ -139,6 +139,10 @@ class EconomySystem(System):
         workers = df[(df['job'].isin(['Gatherer', 'Hunter', 'Fisherman'])) & (df['age'] > 5)]
         if workers.empty:
             return
+            
+        # Guard against missing map (Fixes TypeError)
+        if state.map_data is None or state.map_data.empty:
+            return
         
         try:
             lookup = state.globals.get('terrain_lookup', {})
@@ -168,6 +172,9 @@ class EconomySystem(System):
                 gx, gy = int(ax // scale), int(ay // scale)
                 terrain = lookup.get((gx, gy), 'Plains')
                 
+                # Checks
+                role = agent.get('role', 'Gatherer')
+                
                 # Check Tools
                 tools = tool_map.get(agent['id'], [])
                 has_spear = False
@@ -183,8 +190,14 @@ class EconomySystem(System):
                         has_basket = True
                         basket_idx = t_idx
 
-                # Yield Logic
+                # Yield Logic (Base)
                 yield_amt = 1.0 + (agent['trait_conscientiousness'] * 0.5)
+                
+                # Role Bonuses (Realism Phase 2)
+                # Hunter: Base yield +50% for Meat/Leather
+                # Gatherer: Base yield +50% for Fruit/Wood/Grain
+                is_hunter = (role == 'Hunter')
+                is_gatherer = (role == 'Gatherer')
                 
                 # Apply Tool Bonuses
                 tool_used_idx = -1
@@ -199,28 +212,109 @@ class EconomySystem(System):
                 if tool_used_idx != -1:
                     durability_damage.append(tool_used_idx)
 
+                # Injury Chance (Realism Phase 3)
+                # Forest/Mountain = Risky. Night = Very Risky (TODO: Day/Night)
+                # Tools reduce risk
+                base_risk = 0.0
+                if terrain == 'Mountain': base_risk = 0.05
+                elif terrain == 'Forest': base_risk = 0.03
+                elif terrain == 'Water': base_risk = 0.02
+                
+                # Weather Risk (Realism Phase 5)
+                weather = state.globals.get('weather', 'Sunny')
+                if weather == 'Storm': base_risk *= 2.0
+                elif weather == 'Rain': base_risk *= 1.2
+                
+                # Tools reduce risk
+                if has_spear: base_risk *= 0.1 # Spear protects well
+                elif has_basket: base_risk *= 0.8 # Basket helps slightly
+                
+                if random.random() < base_risk:
+                     # Agent gets injured!
+                     current_injuries = agent.get('injuries', "[]")
+                     if current_injuries == "[]":
+                         state.population.at[idx, 'injuries'] = "['Sprained Ankle']"
+                         state.population.at[idx, 'hp'] -= 10.0
+                         state.log(f"🩹 Agent {agent['id']} injured while gathering in {terrain}!")
+
+                # Resource Depletion Logic (Realism Phase 1)
+                map_idx = gx * 20 + gy
+                if map_idx < 0 or map_idx >= len(state.map_data): map_idx = 0
+                
+                # Check resources
+                tile_wood = state.map_data.at[map_idx, 'res_wood']
+                tile_food = state.map_data.at[map_idx, 'res_food']
+                tile_stone = state.map_data.at[map_idx, 'res_stone']
+                
                 items_found = []
                 
                 if terrain == 'Water':
-                    items_found.append(('Fish', yield_amt * 2, 0.15)) 
+                    # Fishing
+                    if tile_food > 0:
+                        amt = yield_amt * 2
+                        if is_hunter: amt *= 1.5 # Hunter fishing bonus
+                        actual_amt = min(amt, tile_food)
+                        items_found.append(('Fish', actual_amt, 0.15))
+                        state.map_data.at[map_idx, 'res_food'] -= actual_amt
+                        
                 elif terrain == 'Forest':
-                    items_found.append(('Fruit', yield_amt * 3, 0.1)) 
-                    if random.random() < 0.3: items_found.append(('Wood', 1, 0.0)) 
-                    if random.random() < 0.2: items_found.append(('Meat', yield_amt, 0.3)) 
+                    # Foraging/Wood
+                    if tile_food > 0:
+                        amt = yield_amt * 3
+                        if is_gatherer: amt *= 1.5 # Gatherer bonus
+                        actual_amt = min(amt, tile_food)
+                        items_found.append(('Fruit', actual_amt, 0.1)) 
+                        state.map_data.at[map_idx, 'res_food'] -= actual_amt
+                        
+                    if random.random() < 0.3 and tile_wood > 0: 
+                        actual_amt = min(1.0, tile_wood)
+                        if is_gatherer: actual_amt *= 1.2
+                        items_found.append(('Wood', actual_amt, 0.0)) 
+                        state.map_data.at[map_idx, 'res_wood'] -= actual_amt
+                        
+                    if random.random() < 0.2 and tile_food > 0: 
+                        amt = yield_amt
+                        if is_hunter: amt *= 1.5
+                        actual_amt = min(amt, tile_food)
+                        items_found.append(('Meat', actual_amt, 0.3)) 
+                        state.map_data.at[map_idx, 'res_food'] -= actual_amt
+                        
                 elif terrain == 'Mountain':
-                    if random.random() < 0.5: items_found.append(('Stone', 1, 0.0))
-                    if random.random() < 0.2: items_found.append(('Fruit', yield_amt, 0.1))     
+                    if random.random() < 0.5 and tile_stone > 0: 
+                        actual_amt = min(1.0, tile_stone)
+                        items_found.append(('Stone', actual_amt, 0.0))
+                        state.map_data.at[map_idx, 'res_stone'] -= actual_amt
+                        
+                    if random.random() < 0.2 and tile_food > 0: 
+                        amt = yield_amt
+                        actual_amt = min(amt, tile_food)
+                        items_found.append(('Fruit', actual_amt, 0.1))
+                        state.map_data.at[map_idx, 'res_food'] -= actual_amt
+                        
                 else: # Plains
-                    if era != 'Paleolithic' and random.random() < 0.4:
-                        items_found.append(('Grain', yield_amt * 2, 0.01)) 
-                    if random.random() < 0.3: items_found.append(('Meat', yield_amt, 0.3))
-                    else: items_found.append(('Fruit', yield_amt, 0.1))
+                    if era != 'Paleolithic' and random.random() < 0.4 and tile_food > 0:
+                        amt = yield_amt * 2
+                        actual_amt = min(amt, tile_food)
+                        items_found.append(('Grain', actual_amt, 0.01)) 
+                        state.map_data.at[map_idx, 'res_food'] -= actual_amt
+                        
+                    if random.random() < 0.3 and tile_food > 0: 
+                        amt = yield_amt
+                        actual_amt = min(amt, tile_food)
+                        items_found.append(('Meat', actual_amt, 0.3))
+                        state.map_data.at[map_idx, 'res_food'] -= actual_amt
+                    elif tile_food > 0: 
+                        amt = yield_amt
+                        actual_amt = min(amt, tile_food)
+                        items_found.append(('Fruit', actual_amt, 0.1))
+                        state.map_data.at[map_idx, 'res_food'] -= actual_amt
                 
                 for item, amt, sp in items_found:
-                    updates.append({
-                        "agent_id": agent['id'], "item": item, "amount": amt, 
-                        "durability": 0, "max_durability": 0, "spoilage_rate": sp
-                    })
+                    if amt > 0: # Only add if we actually gathered something
+                        updates.append({
+                            "agent_id": agent['id'], "item": item, "amount": amt, 
+                            "durability": 0, "max_durability": 0, "spoilage_rate": sp
+                        })
             
             # Apply Durability Damage (BEFORE adding new items to avoid index mismatch)
             if durability_damage and not state.inventory.empty:
@@ -295,6 +389,32 @@ class EconomySystem(System):
         food_items = ['Meat', 'Fish', 'Fruit', 'Grain']
         food_priority = {'Meat': 3.0, 'Fish': 2.5, 'Fruit': 1.5, 'Grain': 1.0}
         
+        # Policy-based Distribution Priority
+        # Decentralized Logic: 
+        # Assign 'priority_score' based on Tribe Policy, then sort globally.
+        living_df['priority_score'] = 0.0
+        
+        if hasattr(state, 'tribes'):
+             for tid, tdata in state.tribes.items():
+                 pol = tdata.get('policies', {}).get('rationing_label', 'Communal')
+                 t_mask = living_df['tribe_id'] == tid
+                 
+                 if pol == 'Meritocracy':
+                     # Prestige based (High prestige first)
+                     # Normalize to be competitive with other schemes? 
+                     # Let's assume Prestige is 0-100 range.
+                     living_df.loc[t_mask, 'priority_score'] = living_df.loc[t_mask, 'prestige'] * 2 # Boosted
+                 elif pol == 'ChildFirst':
+                     # Children first (Younger = Higher score)
+                     # Max age ~80. 
+                     living_df.loc[t_mask, 'priority_score'] = 200 - living_df.loc[t_mask, 'age']
+                 else: # Communal
+                     # Random shuffle equivalent
+                     living_df.loc[t_mask, 'priority_score'] = np.random.uniform(0, 100, size=t_mask.sum())
+        
+        # Sort by priority (Highest Score Eats First)
+        living_df = living_df.sort_values(by='priority_score', ascending=False)
+        
         # Process living agents
         for idx, agent in living_df.iterrows():
             agent_id = agent['id']
@@ -306,23 +426,79 @@ class EconomySystem(System):
                 (inv['item'].isin(food_items))
             ].sort_values(by='spoilage_rate', ascending=False)
             
+            consumed_calories = 0.0
+            daily_nutrients = {'protein': 0, 'carbs': 0, 'vitamins': 0}
+
             if agent_food.empty:
                 state.population.at[idx, 'stamina'] -= 15.0
-                continue
-            
-            consumed_calories = 0.0
-            for food_idx, food_row in agent_food.iterrows():
-                if consumed_calories >= needed: break
+                # Do NOT continue; must process nutrient decay below
+            else:
+                for food_idx, food_row in agent_food.iterrows():
+                    if consumed_calories >= needed: break
+                    
+                    item = food_row['item']
+                    avail = food_row['amount']
+                    val = food_priority.get(item, 1.0)
+                    
+                    eat_amt = min(avail, (needed - consumed_calories) / val)
+                    if eat_amt > 0:
+                        state.inventory.at[food_idx, 'amount'] -= eat_amt
+                        consumed_calories += eat_amt * val
+                        
+                        # Nutrient Intake (Realism Phase 3)
+                        # Meat: Protein++
+                        # Fish: Protein+, Vitamin+
+                        # Fruit: Vitamin++, Carb+
+                        # Grain: Carb++
+                        if item == 'Meat':
+                            daily_nutrients['protein'] += eat_amt * 20
+                        elif item == 'Fish':
+                            daily_nutrients['protein'] += eat_amt * 15
+                            daily_nutrients['vitamins'] += eat_amt * 10
+                        elif item == 'Fruit':
+                            daily_nutrients['carbs'] += eat_amt * 10
+                            daily_nutrients['vitamins'] += eat_amt * 20
+                        elif item == 'Grain':
+                            daily_nutrients['carbs'] += eat_amt * 30
+
+            # Update Nutrients State
+            # Parse - Update - Write Back (Slow but functional for Phase 3)
+            try:
+                import ast
+                current_nuts = ast.literal_eval(agent.get('nutrients', "{'protein': 50, 'carbs': 50, 'vitamins': 50}"))
+            except:
+                current_nuts = {'protein': 50, 'carbs': 50, 'vitamins': 50}
                 
-                item = food_row['item']
-                avail = food_row['amount']
-                val = food_priority.get(item, 1.0)
-                
-                eat_amt = min(avail, (needed - consumed_calories) / val)
-                if eat_amt > 0:
-                    state.inventory.at[food_idx, 'amount'] -= eat_amt
-                    consumed_calories += eat_amt * val
+            # Decay (Daily Burn)
+            current_nuts['protein'] -= 5
+            current_nuts['carbs'] -= 5
+            current_nuts['vitamins'] -= 5
             
+            # Add Intake
+            current_nuts['protein'] += daily_nutrients['protein']
+            current_nuts['carbs'] += daily_nutrients['carbs']
+            current_nuts['vitamins'] += daily_nutrients['vitamins']
+            
+            # Cap at 100, Min 0
+            for k in current_nuts:
+                current_nuts[k] = max(0, min(100, current_nuts[k]))
+                
+            state.population.at[idx, 'nutrients'] = str(current_nuts)
+            
+            # Malnutrition Penalties
+            is_malnourished = False
+            if current_nuts['protein'] < 20: # Kwashiorkor (Weakness)
+                state.population.at[idx, 'max_hp'] -= 0.5
+                is_malnourished = True
+            if current_nuts['vitamins'] < 20: # Scurvy (Bleeding)
+                 state.population.at[idx, 'hp'] -= 1.0
+                 is_malnourished = True
+            if current_nuts['carbs'] < 20: # Hypoglycemia (No Energy)
+                 state.population.at[idx, 'stamina'] -= 10.0
+                 
+            if is_malnourished and random.random() < 0.01:
+                state.log(f"⚠️ Agent {agent_id} is suffering from malnutrition.")
+
             # Apply stamina effects
             if consumed_calories >= needed:
                 state.population.at[idx, 'stamina'] += 10.0
